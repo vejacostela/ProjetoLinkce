@@ -252,6 +252,7 @@
 
         .btn-add:hover {
             transform: translateY(-2px);
+            transform:scale(1.05);
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
         }
 
@@ -323,6 +324,51 @@
             color: var(--text-secondary);
         }
 
+        .materiais-linha{
+            display:flex;
+            gap:10px;
+            width:100%;
+        }
+
+        /* 60% busca */
+        .search-box{
+            flex:6;
+            position:relative;
+        }
+
+        .search-box input{
+            width:100%;
+            padding:12px;
+            border-radius:12px;
+            border:1px solid #444;
+            background:#1b1f38;
+            color:white;
+        }
+
+        /* 20% quantidade */
+        .quantidade{
+            flex:2;
+            padding:12px;
+            border-radius:12px;
+            border:1px solid #ff7a3d;
+            background:transparent;
+            color:white;
+            text-align:center;
+            font-size:16px;
+        }
+
+        /* 20% botão */
+        .btn-add{
+            flex:2;
+            border:none;
+            border-radius:12px;
+            background:linear-gradient(45deg,#ff7a3d,#ffb347);
+            color:black;
+            font-size:22px;
+            font-weight:bold;
+            cursor:pointer;
+        }
+
         /* Material List */
         .material-list {
             display: flex;
@@ -346,6 +392,11 @@
             font-size: 14px;
             font-weight: 600;
             animation: popIn 0.3s ease;
+        }
+
+        
+        .materiais-linha{
+            flex-wrap:nowrap;
         }
 
         @keyframes popIn {
@@ -697,6 +748,20 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="materiais-linha">
+
+                        <div class="search-box">
+                            <input type="text" id="searchMaterial" placeholder="🔍 Buscar material...">
+                            <div id="searchResults" class="search-results"></div>
+                        </div>
+
+                    <input type="number" id="quantidade" value="1" min="1" class="quantidade">
+
+                    <button id="btnAdicionar" class="btn-add">+</button>
+
+                </div>
+
 
                 <div class="form-group">
                     <label>📌 Observações</label>
