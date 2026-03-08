@@ -1,12 +1,13 @@
 import os
 import json
-import datetime
 import logging
+from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import pytz  # ← Biblioteca para timezones
 
 # Configurar log
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +23,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# === TIMEZONE BRASIL ===
+TZ_BRASIL = pytz.timezone("America/Sao_Paulo")
+
+def get_data_brasil():
+    """Retorna data/hora formatada no fuso horário do Brasil"""
+    agora = datetime.now(TZ_BRASIL)
+    return agora.strftime("%d/%m/%Y %H:%M")
 
 # Montar arquivos estáticos apenas se a pasta existir
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -41,7 +50,6 @@ def carregar_materiais():
         
         if not os.path.exists(caminho):
             logger.error(f"❌ Arquivo não encontrado: {caminho}")
-            # Retorna lista padrão de fallback
             return [
                 {"nome": "CONECTOR APC", "categoria": "Conectores"},
                 {"nome": "CABO DROP", "categoria": "Cabos"},
@@ -52,15 +60,11 @@ def carregar_materiais():
             conteudo = f.read()
             logger.info(f"📄 Conteúdo do arquivo ({len(conteudo)} bytes)")
             
-            for i, linha in enumerate(conteudo.splitlines()):
+            for linha in conteudo.splitlines():
                 linha = linha.strip()
-                
-                # Ignora linhas vazias e comentários
                 if not linha or linha.startswith('#'):
                     continue
-                    
                 partes = linha.split('|')
-                
                 if len(partes) >= 2:
                     materiais.append({
                         "nome": partes[0].strip(),
@@ -72,15 +76,12 @@ def carregar_materiais():
         
     except Exception as e:
         logger.error(f"❌ Erro ao carregar materiais: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        # Retorna lista padrão em caso de erro
         return [
             {"nome": "CONECTOR APC", "categoria": "Conectores"},
             {"nome": "CABO DROP", "categoria": "Cabos"}
         ]
 
-# Cache de materiais (carregado uma vez ao iniciar)
+# Cache de materiais
 MATERIAIS_CACHE = None
 
 @app.on_event("startup")
@@ -113,7 +114,6 @@ async def index():
 @app.get("/api/materiais")
 async def get_materiais():
     """Retorna lista de materiais do arquivo .txt"""
-    logger.info(f"📡 API /api/materiais chamada - {len(MATERIAIS_CACHE)} materiais")
     return JSONResponse(content={
         "materiais": MATERIAIS_CACHE,
         "total": len(MATERIAIS_CACHE)
@@ -130,13 +130,12 @@ async def recarregar_materiais():
         "total": len(MATERIAIS_CACHE)
     })
 
-# === DEBUG: Verificar arquivo materiais.txt ===
+# === DEBUG ===
 @app.get("/api/debug/materiais")
 async def debug_materiais():
     """Endpoint de debug para verificar o arquivo materiais.txt"""
     caminho = os.path.join(os.path.dirname(__file__), "materiais.txt")
     existe = os.path.exists(caminho)
-    
     conteudo = ""
     if existe:
         with open(caminho, "r", encoding="utf-8") as f:
@@ -146,8 +145,7 @@ async def debug_materiais():
         "caminho": caminho,
         "existe": existe,
         "conteudo": conteudo,
-        "materiais_no_cache": len(MATERIAIS_CACHE) if MATERIAIS_CACHE else 0,
-        "primeiros_materiais": MATERIAIS_CACHE[:5] if MATERIAIS_CACHE else []
+        "materiais_no_cache": len(MATERIAIS_CACHE) if MATERIAIS_CACHE else 0
     })
 
 # === GERAÇÃO DE RELATÓRIO ===
@@ -157,11 +155,8 @@ async def gerar_relatorio(request: Request):
     """Gera o relatório técnico com os dados enviados"""
     try:
         body = await request.body()
-        logger.info(f"📦 Dados recebidos: {len(body)} bytes")
-        
         data = json.loads(body)
         
-        # Extrair dados do formulário
         tecnico = data.get("tecnico", "").strip()
         relatorio_texto = data.get("relatorio_texto", "").strip()
         problema_tecnico = data.get("problema_tecnico", "").strip()
@@ -171,10 +166,9 @@ async def gerar_relatorio(request: Request):
         materiais_utilizados = data.get("materiais_utilizados", "").strip()
         materiais_recolhidos = data.get("materiais_recolhidos", "").strip()
 
-        # Data atual formatada
-        data_atual = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+        # ✅ DATA/HORA DO BRASIL
+        data_atual = get_data_brasil()
 
-        # Montar o relatório formatado
         relatorio = f"""
 ==============================
 Relatório Técnico - {data_atual}
@@ -217,12 +211,13 @@ async def health_check():
     """Endpoint para verificar se o servidor está online"""
     return {
         "status": "ok",
-        "materiais_carregados": len(MATERIAIS_CACHE) if MATERIAIS_CACHE else 0,
-        "timestamp": datetime.datetime.now().isoformat()
+        "timezone": "America/Sao_Paulo",
+        "data_brasil": get_data_brasil(),
+        "materiais_carregados": len(MATERIAIS_CACHE) if MATERIAIS_CACHE else 0
     }
 
 # === INÍCIO DO SERVIDOR ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
-    logger.info(f"🚀 Iniciando servidor na porta {port}")
+    logger.info(f"🚀 Iniciando servidor na porta {port} (Timezone: America/Sao_Paulo)")
     uvicorn.run(app, host="0.0.0.0", port=port)
