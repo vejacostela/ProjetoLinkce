@@ -55,7 +55,7 @@
             z-index: 1;
             max-width: 900px;
             margin: 0 auto;
-            padding: 20px 16px;
+            padding: 40px 20px;
         }
 
         .card {
@@ -63,16 +63,16 @@
             backdrop-filter: blur(20px);
             border: 1px solid var(--border-color);
             border-radius: 24px;
-            padding: 24px 20px;
+            padding: 40px;
             box-shadow: var(--shadow);
             animation: fadeInUp 0.8s ease-out 0.2s both;
             overflow: visible;
         }
 
         .card-title {
-            font-size: 28px;
+            font-size: 32px;
             font-weight: 700;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             background: linear-gradient(135deg, #fff, var(--primary-blue));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -81,19 +81,24 @@
 
         .card-subtitle {
             color: var(--text-secondary);
-            margin-bottom: 24px;
-            font-size: 14px;
+            margin-bottom: 30px;
+            font-size: 15px;
         }
 
         /* Form Elements */
         .form-group {
-            margin-bottom: 24px;
+            margin-bottom: 25px;
+            animation: fadeInUp 0.8s ease-out both;
         }
+
+        .form-group:nth-child(1) { animation-delay: 0.3s; }
+        .form-group:nth-child(2) { animation-delay: 0.4s; }
+        .form-group:nth-child(3) { animation-delay: 0.5s; }
 
         label {
             display: block;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             color: var(--text-primary);
             font-size: 14px;
             text-transform: uppercase;
@@ -104,16 +109,15 @@
         input[type="number"],
         textarea {
             width: 100%;
-            padding: 14px 16px;
+            padding: 14px 18px;
             background: rgba(255, 255, 255, 0.05);
             border: 2px solid var(--border-color);
             border-radius: 12px;
             color: var(--text-primary);
             font-family: 'Inter', sans-serif;
-            font-size: 16px;
+            font-size: 15px;
             transition: all 0.3s ease;
             outline: none;
-            -webkit-appearance: none;
         }
 
         input[type="text"]:focus,
@@ -124,6 +128,11 @@
             box-shadow: 0 0 0 4px rgba(17, 138, 178, 0.1);
         }
 
+        input::placeholder,
+        textarea::placeholder {
+            color: var(--text-secondary);
+        }
+
         textarea {
             resize: vertical;
             min-height: 100px;
@@ -132,13 +141,12 @@
         /* Radio Group */
         .radio-group {
             display: flex;
-            flex-direction: column;
-            gap: 12px;
-            margin-top: 8px;
+            gap: 20px;
+            margin-top: 10px;
         }
 
         .radio-item {
-            width: 100%;
+            flex: 1;
             position: relative;
         }
 
@@ -150,7 +158,7 @@
 
         .radio-label {
             display: block;
-            padding: 16px;
+            padding: 15px;
             text-align: center;
             background: rgba(255, 255, 255, 0.05);
             border: 2px solid var(--border-color);
@@ -158,7 +166,7 @@
             cursor: pointer;
             transition: all 0.3s ease;
             font-weight: 600;
-            font-size: 15px;
+            font-size: 14px;
         }
 
         .radio-item input[type="radio"]:checked + .radio-label {
@@ -168,74 +176,136 @@
             box-shadow: 0 4px 15px rgba(17, 138, 178, 0.4);
         }
 
-        /* Search Box - Estilo Google */
+        .radio-label:hover {
+            border-color: var(--primary-blue);
+            transform: translateY(-2px);
+        }
+
+        /* Search Box - Melhorias para mobile */
         .search-container {
             position: relative;
+            margin-bottom: 20px;
             width: 100%;
-            margin-bottom: 16px;
         }
 
         .search-box {
             display: flex;
-            flex-direction: column;
-            gap: 10px;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap; /* Permite quebra em mobile */
         }
 
         .search-input-wrapper {
-            position: relative;
-            width: 100%;
+            flex: 1;
+            min-width: 200px; /* Largura mínima para não ficar muito pequeno */
+        }
+
+        .search-input-wrapper{
+           position: relative;
         }
 
         .search-input {
             width: 100%;
-            padding: 16px 20px;
-            background: rgba(255, 255, 255, 0.08);
+            padding: 14px 20px;
+            background: rgba(255, 255, 255, 0.05);
             border: 2px solid var(--border-color);
-            border-radius: 16px;
+            border-radius: 50px;
             color: var(--text-primary);
-            font-size: 16px;
-            transition: all 0.2s ease;
+            font-size: 15px;
+            transition: all 0.3s ease;
             outline: none;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
         }
 
         .search-input:focus {
-            border-color: var(--primary-blue);
-            background: rgba(255, 255, 255, 0.12);
-            box-shadow: 0 4px 12px rgba(17, 138, 178, 0.3);
+            border-color: var(--primary-green);
+            background: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 0 0 4px rgba(6, 214, 160, 0.1);
         }
 
-        /* Resultados da pesquisa - Estilo Google */
+        .qty-input {
+            width: 100px !important;
+            text-align: center;
+            font-weight: 700;
+            border-radius: 50px !important;
+            border-color: var(--primary-orange) !important;
+        }
+
+        .qty-input:focus {
+            border-color: var(--primary-yellow) !important;
+            box-shadow: 0 0 0 4px rgba(255, 210, 63, 0.2) !important;
+        }
+
+        .btn-add {
+            padding: 14px 28px;
+            background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
+            border: none;
+            border-radius: 50px;
+            color: #0a0e27;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .btn-add:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
+        }
+
+        /* Resultados da pesquisa - Corrigido para mobile */
         .search-results {
             position: absolute;
-            top: calc(100% + 4px);
+            top: calc(100% + 6px);
             left: 0;
-            right: 0;
-            background: #1a1f3a;
-            border: 2px solid var(--primary-blue);
-            border-radius: 20px;
-            max-height: 300px;
+            width: 100%;
+            background: rgba(10, 14, 39, 0.98);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            max-height: 220px;
             overflow-y: auto;
-            z-index: 10000;
+            z-index: 999999;
             display: none;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-            backdrop-filter: blur(10px);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }
+
+        /* Ajuste específico para mobile - garantir que a lista apareça corretamente */
+        @media (max-width: 768px) {
+            .search-results {
+                position: absolute;
+                top: calc(100% + 6px);
+                left: 0;
+                width: 100%;
+                max-height: 200px;
+                overflow-y: auto;
+                z-index: 9999;
+            }
+        }
+            
+        /* Para quando o teclado está aberto */
+            .search-results.show {
+                display: block;
+                max-height: 40vh;
+            }
+        
 
         .search-results.show {
             display: block;
-            animation: slideDown 0.2s ease;
+            animation: slideDown 0.3s ease;
         }
 
         .search-item {
-            padding: 16px 20px;
+            padding: 15px 20px;
             cursor: pointer;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid var(--border-color);
             transition: all 0.2s ease;
         }
 
-        .search-item:active {
-            background: rgba(17, 138, 178, 0.3);
+        .search-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            padding-left: 25px;
         }
 
         .search-item:last-child {
@@ -246,7 +316,6 @@
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 4px;
-            font-size: 15px;
         }
 
         .search-item-category {
@@ -254,47 +323,16 @@
             color: var(--text-secondary);
         }
 
-        /* Quantidade e Botão */
-        .qty-input {
-            width: 100% !important;
-            padding: 16px !important;
-            text-align: center;
-            font-weight: 700;
-            border-radius: 16px !important;
-            border-color: var(--primary-orange) !important;
-            font-size: 16px;
-        }
-
-        .btn-add {
-            width: 100%;
-            padding: 16px;
-            background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
-            border: none;
-            border-radius: 16px;
-            color: #0a0e27;
-            font-weight: 700;
-            font-size: 15px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .btn-add:active {
-            transform: scale(0.98);
-            opacity: 0.9;
-        }
-
         /* Material List */
         .material-list {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
-            margin-top: 12px;
+            gap: 10px;
+            margin-top: 15px;
             min-height: 50px;
-            padding: 12px;
+            padding: 15px;
             background: rgba(255, 255, 255, 0.03);
-            border-radius: 16px;
+            border-radius: 12px;
             border: 1px dashed var(--border-color);
         }
 
@@ -302,31 +340,30 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 16px;
+            padding: 8px 16px;
             background: linear-gradient(135deg, var(--primary-blue), var(--primary-green));
             border-radius: 50px;
             font-size: 14px;
             font-weight: 600;
-            animation: popIn 0.2s ease;
+            animation: popIn 0.3s ease;
         }
 
         @keyframes popIn {
-            0% { transform: scale(0.9); opacity: 0; }
+            0% { transform: scale(0); opacity: 0; }
+            80% { transform: scale(1.1); }
             100% { transform: scale(1); opacity: 1; }
         }
 
         .material-item .remove {
             cursor: pointer;
-            font-size: 20px;
+            font-size: 18px;
             line-height: 1;
             opacity: 0.8;
             transition: opacity 0.2s;
-            padding: 0 4px;
         }
 
-        .material-item .remove:active {
+        .material-item .remove:hover {
             opacity: 1;
-            transform: scale(1.2);
         }
 
         /* Submit Button */
@@ -336,12 +373,12 @@
             background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow), var(--primary-green));
             background-size: 200% 200%;
             border: none;
-            border-radius: 16px;
+            border-radius: 12px;
             color: #0a0e27;
             font-weight: 700;
             font-size: 16px;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             text-transform: uppercase;
             letter-spacing: 1px;
             animation: gradientShift 3s ease infinite;
@@ -353,8 +390,9 @@
             100% { background-position: 0% 50%; }
         }
 
-        .btn-submit:active {
-            transform: scale(0.98);
+        .btn-submit:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 35px rgba(255, 107, 53, 0.4);
         }
 
         .btn-submit:disabled {
@@ -365,8 +403,8 @@
 
         /* Report Container */
         .relatorio-gerado {
-            margin-top: 24px;
-            animation: fadeInUp 0.4s ease;
+            margin-top: 30px;
+            animation: fadeInUp 0.6s ease;
         }
 
         .relatorio-gerado textarea {
@@ -375,27 +413,25 @@
             font-family: 'Courier New', monospace;
             font-size: 14px;
             line-height: 1.6;
-            border-radius: 16px;
         }
 
         .btn-copiar {
-            width: 100%;
             margin-top: 15px;
-            padding: 16px;
+            padding: 14px 32px;
             background: linear-gradient(135deg, var(--primary-green), var(--primary-blue));
             border: none;
-            border-radius: 16px;
+            border-radius: 50px;
             color: white;
             font-weight: 700;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            font-size: 15px;
         }
 
-        .btn-copiar:active {
-            transform: scale(0.98);
+        .btn-copiar:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(6, 214, 160, 0.4);
         }
 
         /* Error Message */
@@ -404,23 +440,23 @@
             border: 2px solid var(--primary-orange);
             color: var(--primary-orange);
             padding: 15px 20px;
-            border-radius: 16px;
+            border-radius: 12px;
             margin-bottom: 20px;
             display: none;
-            animation: shake 0.4s ease;
-            font-size: 14px;
+            animation: shake 0.5s ease;
         }
 
         @keyframes shake {
             0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
+            25% { transform: translateX(-10px); }
+            75% { transform: translateX(10px); }
         }
 
+        /* Animations */
         @keyframes fadeInUp {
             from {
                 opacity: 0;
-                transform: translateY(20px);
+                transform: translateY(30px);
             }
             to {
                 opacity: 1;
@@ -431,7 +467,7 @@
         @keyframes slideDown {
             from {
                 opacity: 0;
-                transform: translateY(-5px);
+                transform: translateY(-10px);
             }
             to {
                 opacity: 1;
@@ -439,71 +475,105 @@
             }
         }
 
-        /* Ajustes específicos para mobile */
-        @media (max-width: 480px) {
-            .container {
-                padding: 12px;
-            }
-
+        /* Responsive - Melhorias significativas para mobile */
+        @media (max-width: 768px) {
             .card {
-                padding: 20px 16px;
+                padding: 20px;
             }
 
             .card-title {
                 font-size: 24px;
             }
 
+            .search-box {
+                flex-direction: column;
+                gap: 8px;
+            }
+
+            .search-input-wrapper {
+                width: 100%;
+                min-width: 100%;
+            }
+
+            .qty-input {
+                width: 100% !important;
+            }
+
+            .btn-add {
+                width: 100%;
+            }
+
+            .radio-group {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .radio-item {
+                width: 100%;
+            }
+
+            /* Ajuste para inputs em mobile */
             input[type="text"],
             input[type="number"],
             textarea,
             .search-input,
-            .qty-input,
-            .btn-add,
-            .btn-submit,
-            .btn-copiar {
-                font-size: 16px;
-                padding: 14px;
+            .qty-input {
+                font-size: 16px; /* Previne zoom automático em iOS */
+                padding: 12px 15px;
+            }
+
+            /* Melhorias na lista de materiais */
+            .material-list {
+                padding: 10px;
             }
 
             .material-item {
                 font-size: 13px;
-                padding: 8px 14px;
+                padding: 6px 12px;
             }
 
-            .search-item {
-                padding: 14px 16px;
+            /* Ajuste para o container de resultados */
+            .search-results {
+                max-height: 200px;
+                font-size: 14px;
+                position: fixed;
+                left: 20px;
+                right: 20px;
+                width: auto;
+                top: auto;
+                bottom: auto;
+                max-height: 40vh;
             }
 
-            .search-item-name {
+            /* Garantir que o texto não fique muito pequeno */
+            body {
+                font-size: 16px;
+            }
+
+            .card-subtitle {
                 font-size: 14px;
             }
 
-            .search-item-category {
-                font-size: 11px;
-            }
-
-            /* Melhorias de toque */
-            .radio-label,
-            .btn-add,
-            .btn-submit,
-            .btn-copiar,
-            .search-item,
-            .material-item .remove {
-                min-height: 48px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-
-            .material-item .remove {
-                min-height: auto;
-                width: 32px;
+            label {
+                font-size: 13px;
             }
         }
 
-        /* Scrollbar customizada */
+        /* Ajustes para telas muito pequenas */
+        @media (max-width: 380px) {
+            .card {
+                padding: 15px;
+            }
+
+            .material-item {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        /* Scrollbar */
         ::-webkit-scrollbar {
-            width: 6px;
+            width: 10px;
         }
 
         ::-webkit-scrollbar-track {
@@ -516,48 +586,98 @@
             border-radius: 10px;
         }
 
-        /* Overlay para quando a pesquisa estiver aberta */
-        .search-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 9999;
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
         }
 
-        .search-overlay.active {
-            display: block;
+        .search-result-item.active {
+            background: rgba(78, 205, 196, 0.15);
+            border-left: 3px solid var(--primary-color);
+        }
+
+        /* Mobile Search Panel (se for usar) */
+        .mobile-search-panel {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+            height: 70%;
+            background: #0a0e27;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+            transition: bottom 0.3s ease;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+        }   
+
+        .mobile-search-panel.active {
+            bottom: 0;
+        }
+
+        .mobile-search-header {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .mobile-search-header input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid var(--border-color);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            font-size: 16px;
+        }
+
+        .mobile-search-header input:focus {
+            outline: none;
+            border-color: var(--primary-blue);
+        }
+
+        .mobile-search-header button {
+            padding: 12px 20px;
+            background: var(--primary-orange);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .mobile-search-results {
+            overflow-y: auto;
+            padding: 10px;
+            flex: 1;
         }
     </style>
 </head>
 <body>
-    <!-- Overlay para fechar resultados ao clicar fora -->
-    <div class="search-overlay" id="searchOverlay"></div>
-
+    <!-- Main Content -->
     <div class="container">
         <div class="card">
             <h1 class="card-title">Novo Relatório</h1>
-            <p class="card-subtitle">Preencha os dados abaixo</p>
+            <p class="card-subtitle">Preencha os dados abaixo para gerar seu relatório técnico</p>
 
             <div id="mensagemErro" class="error"></div>
 
             <form id="formRelatorio">
                 <div class="form-group">
-                    <label>👤 Técnico</label>
-                    <input type="text" name="tecnico" placeholder="Nome do técnico" required>
+                    <label>👤 Técnico Responsável</label>
+                    <input type="text" name="tecnico" placeholder="Digite o nome do técnico" required>
                 </div>
 
                 <div class="form-group">
-                    <label>📝 O que foi feito</label>
-                    <textarea name="relatorio_texto" rows="4" placeholder="Descreva as atividades..." required></textarea>
+                    <label>📝 Relatório - O que foi feito</label>
+                    <textarea name="relatorio_texto" rows="4" placeholder="Descreva as atividades realizadas..." required></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label>⚠️ Problema</label>
-                    <textarea name="problema_tecnico" rows="4" placeholder="Descreva o problema..." required></textarea>
+                    <label>⚠️ Problema Encontrado</label>
+                    <textarea name="problema_tecnico" rows="4" placeholder="Descreva o problema identificado..." required></textarea>
                 </div>
 
                 <div class="form-group">
@@ -580,7 +700,7 @@
 
                 <div class="form-group">
                     <label>📌 Observações</label>
-                    <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais..."></textarea>
+                    <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais sobre o equipamento..."></textarea>
                 </div>
 
                 <div class="form-group">
@@ -593,15 +713,15 @@
                     <div class="search-container">
                         <div class="search-box">
                             <div class="search-input-wrapper">
-                                <input type="text" class="search-input" id="searchUtilizados" placeholder="Buscar material..." autocomplete="off">
+                                <input type="text" class="search-input" id="searchUtilizados" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
-                            <div class="search-results" id="resultsUtilizados"></div>
-                            <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Quantidade" min="1" value="1">
+                            <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1">
                             <button type="button" class="btn-add" id="btnAddUtilizados">Adicionar</button>
                         </div>
+                        <div class="search-results" id="resultsUtilizados"></div>
                     </div>
                     <div class="material-list" id="listUtilizados"></div>
-                    <textarea name="materiais_utilizados" id="materiais_utilizados" rows="3" readonly placeholder="Materiais adicionados..."></textarea>
+                    <textarea name="materiais_utilizados" id="materiais_utilizados" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
                 </div>
 
                 <div class="form-group">
@@ -609,26 +729,26 @@
                     <div class="search-container">
                         <div class="search-box">
                             <div class="search-input-wrapper">
-                                <input type="text" class="search-input" id="searchRecolhidos" placeholder="Buscar material..." autocomplete="off">
+                                <input type="text" class="search-input" id="searchRecolhidos" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
-                            <div class="search-results" id="resultsRecolhidos"></div>
-                            <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Quantidade" min="1" value="1">
+                            <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1">
                             <button type="button" class="btn-add" id="btnAddRecolhidos">Adicionar</button>
                         </div>
+                        <div class="search-results" id="resultsRecolhidos"></div>
                     </div>
                     <div class="material-list" id="listRecolhidos"></div>
-                    <textarea name="materiais_recolhidos" id="materiais_recolhidos" rows="3" readonly placeholder="Materiais adicionados..."></textarea>
+                    <textarea name="materiais_recolhidos" id="materiais_recolhidos" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
                 </div>
 
                 <button type="submit" class="btn-submit" id="btnSubmit">
-                    Gerar Relatório
+                    🚀 Gerar Relatório
                 </button>
             </form>
 
             <div class="relatorio-gerado" id="relatorioContainer" style="display:none;">
-                <h2 style="margin-bottom: 15px; font-size: 22px;">📄 Relatório</h2>
+                <h2 style="margin-bottom: 15px; font-size: 24px;">📄 Relatório Gerado</h2>
                 <textarea id="relatorioTexto" readonly rows="15"></textarea>
-                <button type="button" class="btn-copiar" id="btnCopiar">Copiar</button>
+                <button type="button" class="btn-copiar" id="btnCopiar">📋 Copiar Relatório</button>
             </div>
         </div>
     </div>
@@ -641,163 +761,142 @@
         let materiaisUtilizados = [];
         let materiaisRecolhidos = [];
         let selectedMaterial = { utilizados: null, recolhidos: null };
-        let activeSearch = null;
-
-        // Materiais de exemplo
-        const materiaisExemplo = [
-            { nome: "CONECTOR APC", categoria: "Conectores" },
-            { nome: "CONECTOR SC", categoria: "Conectores" },
-            { nome: "CABO DROP 50m", categoria: "Cabos" },
-            { nome: "CABO DROP 100m", categoria: "Cabos" },
-            { nome: "FUSÍVEL 5A", categoria: "Elétrica" },
-            { nome: "FUSÍVEL 10A", categoria: "Elétrica" },
-            { nome: "PARAFUSO 6mm", categoria: "Fixação" },
-            { nome: "PARAFUSO 8mm", categoria: "Fixação" },
-            { nome: "ABRAÇADEIRA 100mm", categoria: "Fixação" },
-            { nome: "ABRAÇADEIRA 200mm", categoria: "Fixação" },
-            { nome: "ADAPTADOR APC", categoria: "Adaptadores" },
-            { nome: "ADAPTADOR SC", categoria: "Adaptadores" },
-            { nome: "ATENUADOR 5dB", categoria: "Atenuadores" },
-            { nome: "ATENUADOR 10dB", categoria: "Atenuadores" }
-        ];
 
         async function carregarMateriais() {
             try {
-                // Tenta carregar da API
                 const response = await fetch('/api/materiais');
                 const data = await response.json();
                 materiaisDisponiveis = data.materiais || [];
                 
+                console.log("✅", materiaisDisponiveis.length, "materiais carregados");
+                
                 if (materiaisDisponiveis.length === 0) {
-                    materiaisDisponiveis = materiaisExemplo;
+                    console.warn("⚠️ NENHUM MATERIAL CARREGADO!");
                 }
+                
+                init();
             } catch (err) {
-                console.log("Usando materiais de exemplo");
-                materiaisDisponiveis = materiaisExemplo;
+                console.error("❌ Erro ao carregar materiais:", err);
+                materiaisDisponiveis = [
+                    { nome: "CONECTOR APC", categoria: "Conectores" },
+                    { nome: "CABO DROP", categoria: "Cabos" },
+                    { nome: "FUSÍVEL", categoria: "Elétrica" },
+                    { nome: "PARAFUSO", categoria: "Fixação" },
+                    { nome: "ABRAÇADEIRA", categoria: "Fixação" }
+                ];
+                init();
             }
-            
-            console.log("✅", materiaisDisponiveis.length, "materiais carregados");
-            init();
         }
 
         function init() {
+            console.log("=== INIT CHAMADO ===");
+            
             setupSearch('utilizados');
             setupSearch('recolhidos');
             setupForm();
             
-            // Overlay para fechar resultados
-            const overlay = document.getElementById('searchOverlay');
-            overlay.addEventListener('click', function() {
-                closeAllResults();
-            });
-        }
-
-        function closeAllResults() {
-            document.querySelectorAll('.search-results').forEach(r => r.classList.remove('show'));
-            document.getElementById('searchOverlay').classList.remove('active');
-            activeSearch = null;
+            const btnAddUtil = document.getElementById('btnAddUtilizados');
+            const btnAddRec = document.getElementById('btnAddRecolhidos');
+            
+            if (btnAddUtil) {
+                btnAddUtil.addEventListener('click', function() { addMaterial('utilizados'); });
+            }
+            if (btnAddRec) {
+                btnAddRec.addEventListener('click', function() { addMaterial('recolhidos'); });
+            }
         }
 
         function setupSearch(tipo) {
             const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const resultsDiv = document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const qtyInput = document.getElementById('qty' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
-            const btnAdd = document.getElementById('btnAdd' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             
             if (!searchInput || !resultsDiv) {
                 console.error("Elementos não encontrados para:", tipo);
                 return;
             }
             
-            // Input event para busca
             searchInput.addEventListener('input', function(e) {
                 const query = e.target.value.toLowerCase().trim();
                 resultsDiv.innerHTML = '';
                 
                 if (query.length < 1) {
                     resultsDiv.classList.remove('show');
-                    document.getElementById('searchOverlay').classList.remove('active');
                     return;
                 }
                 
                 const filtered = materiaisDisponiveis.filter(function(m) {
-                    return m.nome.toLowerCase().includes(query) || 
-                           m.categoria.toLowerCase().includes(query);
+                    return m.nome.toLowerCase().includes(query) || m.categoria.toLowerCase().includes(query);
                 });
                 
                 if (filtered.length > 0) {
                     filtered.forEach(function(material) {
                         const item = document.createElement('div');
                         item.className = 'search-item';
-                        item.innerHTML = '<div class="search-item-name">' + material.nome + '</div>' +
-                                       '<div class="search-item-category">' + material.categoria + '</div>';
-                        
+                        item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
                         item.addEventListener('click', function() { 
-                            selectMaterial(tipo, material, searchInput, resultsDiv);
-                            qtyInput.focus();
+                            selectMaterial(tipo, material, qtyInput);
+                            // Fechar resultados após selecionar no mobile
+                            resultsDiv.classList.remove('show');
                         });
-                        
                         resultsDiv.appendChild(item);
                     });
-                    
                     resultsDiv.classList.add('show');
-                    document.getElementById('searchOverlay').classList.add('active');
-                    activeSearch = tipo;
                 } else {
                     resultsDiv.classList.remove('show');
-                    document.getElementById('searchOverlay').classList.remove('active');
                 }
             });
-
-            // Focar no input
-            searchInput.addEventListener('focus', function() {
-                if (searchInput.value.length > 0) {
-                    resultsDiv.classList.add('show');
-                    document.getElementById('searchOverlay').classList.add('active');
+            
+            searchInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    qtyInput.focus();
                 }
             });
-
-            // Botão adicionar
-            btnAdd.addEventListener('click', function() {
-                addMaterial(tipo);
-            });
-
-            // Enter no input de quantidade
+            
             qtyInput.addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     e.preventDefault();
                     addMaterial(tipo);
                 }
             });
-
-            // Prevenir que o clique no input feche os resultados
-            searchInput.addEventListener('click', function(e) {
-                e.stopPropagation();
+            
+            document.addEventListener('click', function(e) {
+                if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target) && !qtyInput.contains(e.target) && !document.getElementById('btnAdd' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).contains(e.target)) {
+                    resultsDiv.classList.remove('show');
+                }
             });
+
+            // Fechar resultados ao rolar a página (útil para mobile)
+            window.addEventListener('scroll', function() {
+                resultsDiv.classList.remove('show');
+            }, { passive: true });
         }
 
-        function selectMaterial(tipo, material, searchInput, resultsDiv) {
+        function selectMaterial(tipo, material, qtyInput) {
             selectedMaterial[tipo] = material;
+            const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             searchInput.value = material.nome;
-            resultsDiv.classList.remove('show');
-            document.getElementById('searchOverlay').classList.remove('active');
+            document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).classList.remove('show');
+            
+            setTimeout(function() {
+                qtyInput.focus();
+                qtyInput.select();
+            }, 50);
         }
 
         function addMaterial(tipo) {
             const material = selectedMaterial[tipo];
             const qtyInput = document.getElementById('qty' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const qty = parseInt(qtyInput.value);
-            const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             
             if (!material) {
                 alert('Selecione um material da lista!');
-                searchInput.focus();
                 return;
             }
             
             if (!qty || qty < 1) {
                 alert('Informe uma quantidade válida!');
-                qtyInput.focus();
                 return;
             }
             
@@ -805,9 +904,9 @@
             
             if (tipo === 'utilizados') {
                 const existingIndex = materiaisUtilizados.findIndex(function(m) { 
-                    return m.split(':')[1] === material.nome; 
+                    const parts = m.split(':');
+                    return parts[1] === material.nome; 
                 });
-                
                 if (existingIndex >= 0) {
                     const parts = materiaisUtilizados[existingIndex].split(':');
                     const novaQtd = parseInt(parts[0]) + qty;
@@ -818,9 +917,9 @@
                 updateMaterialList('utilizados');
             } else {
                 const existingIndex = materiaisRecolhidos.findIndex(function(m) { 
-                    return m.split(':')[1] === material.nome; 
+                    const parts = m.split(':');
+                    return parts[1] === material.nome; 
                 });
-                
                 if (existingIndex >= 0) {
                     const parts = materiaisRecolhidos[existingIndex].split(':');
                     const novaQtd = parseInt(parts[0]) + qty;
@@ -831,12 +930,10 @@
                 updateMaterialList('recolhidos');
             }
             
-            // Limpar campos
-            searchInput.value = '';
+            document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).value = '';
             qtyInput.value = '1';
             selectedMaterial[tipo] = null;
-            closeAllResults();
-            searchInput.focus();
+            document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).focus();
         }
 
         function updateMaterialList(tipo) {
@@ -858,10 +955,9 @@
                 listDiv.appendChild(span);
             });
             
-            // Adicionar eventos de remoção
-            listDiv.querySelectorAll('.remove').forEach(function(btn) {
+            const removeButtons = listDiv.querySelectorAll('.remove');
+            removeButtons.forEach(function(btn) {
                 btn.addEventListener('click', function(e) {
-                    e.stopPropagation();
                     const tipo = e.target.getAttribute('data-tipo');
                     const index = parseInt(e.target.getAttribute('data-index'));
                     removeMaterial(tipo, index);
@@ -886,73 +982,78 @@
             const container = document.getElementById("relatorioContainer");
             const textarea = document.getElementById("relatorioTexto");
 
+            if (!form) {
+                console.error("Formulário não encontrado!");
+                return;
+            }
+
             form.addEventListener("submit", function(e) {
                 e.preventDefault();
+                e.stopPropagation();
 
                 erroDiv.style.display = "none";
+                erroDiv.textContent = "";
                 btnSubmit.disabled = true;
-                btnSubmit.textContent = "Processando...";
+                btnSubmit.textContent = "⏳ Processando...";
 
                 const formData = new FormData(form);
                 const data = Object.fromEntries(formData.entries());
 
-                // Simular geração de relatório (já que não temos o backend)
-                setTimeout(() => {
-                    const relatorio = gerarRelatorioMock(data);
-                    textarea.value = relatorio;
-                    container.style.display = "block";
-                    container.scrollIntoView({ behavior: "smooth" });
-                    
+                // Adicionar materiais aos dados
+                data.materiais_utilizados = materiaisUtilizados.join('\n');
+                data.materiais_recolhidos = materiaisRecolhidos.join('\n');
+
+                fetch("/gerar_relatorio", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(data)
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(result) {
+                    if (result.relatorio) {
+                        textarea.value = result.relatorio;
+                        container.style.display = "block";
+                        container.scrollIntoView({ behavior: "smooth" });
+                    } else {
+                        throw new Error(result.error || "Erro desconhecido");
+                    }
+                })
+                .catch(function(err) {
+                    console.error("ERRO:", err);
+                    erroDiv.textContent = "❌ Erro: " + err.message;
+                    erroDiv.style.display = "block";
+                })
+                .finally(function() {
                     btnSubmit.disabled = false;
-                    btnSubmit.textContent = "Gerar Relatório";
-                }, 1000);
+                    btnSubmit.textContent = "🚀 Gerar Relatório";
+                });
             });
 
-            document.getElementById("btnCopiar").addEventListener("click", function() {
-                navigator.clipboard.writeText(textarea.value)
-                    .then(function() { 
-                        const btn = document.getElementById("btnCopiar");
-                        const original = btn.textContent;
-                        btn.textContent = "Copiado!";
-                        setTimeout(() => btn.textContent = original, 2000);
-                    })
-                    .catch(function() { alert("Erro ao copiar"); });
-            });
-        }
-
-        function gerarRelatorioMock(data) {
-            let relatorio = `RELATÓRIO TÉCNICO\n`;
-            relatorio += `==================\n\n`;
-            relatorio += `Técnico: ${data.tecnico}\n`;
-            relatorio += `Data: ${new Date().toLocaleDateString('pt-BR')}\n\n`;
-            relatorio += `ATIVIDADES REALIZADAS:\n${data.relatorio_texto}\n\n`;
-            relatorio += `PROBLEMA ENCONTRADO:\n${data.problema_tecnico}\n\n`;
-            relatorio += `EQUIPAMENTO: ${data.equipamento_status}\n`;
-            if (data.equipamento_obs) relatorio += `Obs: ${data.equipamento_obs}\n`;
-            relatorio += `SINAL RSSI: ${data.maior_sinal}\n\n`;
-            
-            if (materiaisUtilizados.length > 0) {
-                relatorio += `MATERIAIS UTILIZADOS:\n`;
-                materiaisUtilizados.forEach(m => {
-                    const [qtd, nome] = m.split(':');
-                    relatorio += `- ${qtd}x ${nome}\n`;
-                });
-                relatorio += `\n`;
-            }
-            
-            if (materiaisRecolhidos.length > 0) {
-                relatorio += `MATERIAIS RECOLHIDOS:\n`;
-                materiaisRecolhidos.forEach(m => {
-                    const [qtd, nome] = m.split(':');
-                    relatorio += `- ${qtd}x ${nome}\n`;
+            const btnCopiar = document.getElementById("btnCopiar");
+            if (btnCopiar) {
+                btnCopiar.addEventListener("click", function() {
+                    navigator.clipboard.writeText(textarea.value)
+                        .then(function() { 
+                            const btn = document.getElementById("btnCopiar");
+                            const original = btn.textContent;
+                            btn.textContent = "✅ Copiado!";
+                            setTimeout(() => btn.textContent = original, 2000);
+                        })
+                        .catch(function() { alert("Erro ao copiar"); });
                 });
             }
-            
-            return relatorio;
         }
 
         carregarMateriais();
     })();
     </script>
+
+    <div class="mobile-search-panel" id="mobileSearchPanel">
+        <div class="mobile-search-header">
+            <input type="text" id="mobileSearchInput" placeholder="Pesquisar material...">
+            <button onclick="document.getElementById('mobileSearchPanel').classList.remove('active')">Fechar</button>
+        </div>
+        <div class="mobile-search-results" id="mobileSearchResults"></div>
+    </div>
 </body>
 </html>
