@@ -662,24 +662,24 @@
 
         .toast-info{             /* CSS da mensagen rapida */
             position: fixed;
-            bottom: 20px;
-            right: 20px;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-20px);
             background: #1e293b;
             color: white;
-            padding: 14px 18px;
+            padding: 14px 20px;
             border-radius: 8px;
             font-size: 14px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.25);
             opacity: 0;
-            transform: translateY(20px);
-            transition: 0.3s;
+            transition: all .3s ease;
             z-index: 9999;
         }
 
-        .toast-info.show{
-            opacity: 1;
-            transform: translateY(0);
-        }
+.toast-info.show{
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
 
 
 
@@ -812,8 +812,8 @@
                     </div>
                 </div>
 
-                <div id="infoToast" class="toast-info">
-                    ⚡ Dica: Todas as fotos essencias da o.s forem adicionadas?.  //----------------------MENSAGEM PRA MUDAR CONFORME VONTADE
+                <div id="infoToast" class="toast-info">     //----------------------MENSAGEM PRA MUDAR CONFORME VONTADE
+                    ⚡ Dica: Todas as fotos essencias da o.s forem adicionadas?.  
                 </div>
 
                 <div class="form-group">
