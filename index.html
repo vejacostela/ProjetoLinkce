@@ -506,6 +506,17 @@
         ::-webkit-scrollbar-thumb:hover {
             background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
         }
+
+        .search-result-item.active {
+            background: rgba(78, 205, 196, 0.15);
+            border-left: 3px solid var(--primary-color);
+        }
+        .search-result-item.active {
+            background: rgba(78, 205, 196, 0.15);
+            border-left: 3px solid var(--primary-color);
+        }
+
+
     </style>
 </head>
 <body>
@@ -713,6 +724,75 @@
                 }
             });
         }
+
+        let selectedIndex = -1;
+
+        materialSearchInput.addEventListener("keydown", function(e){
+
+            const items = searchResults.querySelectorAll(".search-result-item");
+
+            if(!items.length) return;
+
+            if(e.key === "ArrowDown"){
+
+                e.preventDefault();
+
+                selectedIndex++;
+
+                if(selectedIndex >= items.length){
+                    selectedIndex = 0;
+                }
+
+                updateActive(items);
+            }
+
+            if(e.key === "ArrowUp"){
+
+                e.preventDefault();
+
+                selectedIndex--;
+
+                if(selectedIndex < 0){
+                    selectedIndex = items.length - 1;
+                }
+
+                updateActive(items);
+            }
+
+            if(e.key === "Enter"){
+
+                e.preventDefault();
+
+                if(selectedIndex >= 0){
+                    items[selectedIndex].click();
+                }
+
+            }
+
+            if(e.key === "Escape"){
+                searchResults.style.display = "none";
+            }
+
+        });
+
+        function updateActive(items){
+
+            items.forEach(item => item.classList.remove("active"));
+
+            if(selectedIndex >= 0){
+
+                items[selectedIndex].classList.add("active");
+
+                items[selectedIndex].scrollIntoView({
+                    block: "nearest"
+                });
+
+            }
+
+        }
+
+    /* let selectedIndex = -1;  */
+
 
         function selectMaterial(tipo, material, qtyInput) {
             selectedMaterial[tipo] = material;
