@@ -282,7 +282,7 @@
         
         /* Para quando o teclado está aberto */
             .search-results.show {
-                display: block;
+                /*display: block;*/
                 max-height: 40vh;
             }
         }    
@@ -924,7 +924,7 @@
                     return m.nome.toLowerCase().includes(query) || m.categoria.toLowerCase().includes(query);   
                 })
                 .slice(0,4);// LIMITAR BUSCA A 4 RESULTADOS
-                });
+                
                 
                 if (filtered.length > 0) {
                     filtered.forEach(function(material) {
