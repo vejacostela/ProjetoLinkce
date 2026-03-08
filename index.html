@@ -890,7 +890,7 @@
 
             <div class="relatorio-gerado" id="relatorioContainer" style="display:none;">
                 <h2 style="margin-bottom: 15px; font-size: 24px;">📄 Relatório Gerado</h2>
-                <textarea id="relatorioTexto" readonly rows="15"></textarea>
+                <textarea id="relatorioTexto" rows="15"></textarea>
                 <button type="button" class="btn-copiar" id="btnCopiar">📋 Copiar Relatório</button>
             </div>
         </div>
@@ -1206,7 +1206,15 @@
                     if (result.relatorio) {
 
                         const relatorioComSerial = adicionarCamposSerial(result.relatorio);
-                         textarea.value = relatorioComSerial;
+
+                        textarea.value = relatorioComSerial;
+
+                        container.style.display = "block";   // MOSTRA O RELATÓRIO
+
+                        textarea.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center"
+                        });
 
                     } else {
                         throw new Error(result.error || "Erro desconhecido");
