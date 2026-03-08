@@ -66,6 +66,7 @@
             padding: 40px;
             box-shadow: var(--shadow);
             animation: fadeInUp 0.8s ease-out 0.2s both;
+            overflow: visible;
         }
 
         .card-title {
@@ -255,14 +256,20 @@
             top: calc(100% + 8px);
             left: 0;
             right: 0;
+
             background: rgba(10, 14, 39, 0.98);
             border: 1px solid var(--border-color);
             border-radius: 16px;
-            max-height: 300px;
-            overflow-y: auto;
-            z-index: 1000;
+
+            max-height: 220px;        /* mostra aprox 4 itens */
+            overflow-y: auto;         /* scroll vertical */
+
+            z-index: 999999;          /* garante que fique acima de tudo */
+
             display: none;
+
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+
             width: 100%;
         }
 
