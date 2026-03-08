@@ -253,7 +253,7 @@
 
         .search-results {
             position: absolute;
-            top: calc(100% + 8px);
+            top: calc(100% + 6px);
             left: 0;
             right: 0;
 
@@ -264,7 +264,7 @@
             max-height: 220px;        /* mostra aprox 4 itens */
             overflow-y: auto;         /* scroll vertical */
 
-            z-index: 999999;          /* garante que fique acima de tudo */
+            z-index: 9999;          /* garante que fique acima de tudo */
 
             display: none;
 
@@ -364,6 +364,15 @@
             text-transform: uppercase;
             letter-spacing: 1px;
             animation: gradientShift 3s ease infinite;
+        }
+
+        @media (max-width: 768px){
+
+            .search-results{
+                max-height: 180px;
+                font-size: 14px;
+            }
+
         }
 
         @keyframes gradientShift {
