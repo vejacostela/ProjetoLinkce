@@ -699,6 +699,15 @@
 
         }   
 
+        .serial-onu{     /* SERIAL DE EQUIPAMENTO------------------------------------------------------------------------------------ */
+            margin-left: 8px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 170px;
+        }
+
 
         /* Scrollbar */
         ::-webkit-scrollbar {
@@ -800,7 +809,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>📝 Relatório - Problema Encontrado/label>
+                    <label>📝 Relatório - Problema Encontrado</label>
                     <textarea name="relatorio_texto" rows="4" placeholder="Descreva as atividades realizadas..." required></textarea>
                 </div>
 
@@ -810,7 +819,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>🔧 Equipamento no cabo de rede</label>
+                    <label>🔧 Equipamento(s) no cabo de rede</label>
                     <div class="radio-group">
                         <div class="radio-item">
                             <input type="radio" name="equipamento_status" value="Cabeado" id="cabeado" required>
@@ -833,7 +842,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label>📌 Observações</label>
+                    <label>📌 Observações </label>
                     <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais sobre o equipamento..."></textarea>
                 </div>
 
@@ -941,6 +950,25 @@
             }, 7500);
 
         });
+
+
+        if(
+            material.nome.toLowerCase().includes("onu") ||
+            material.nome.toLowerCase().includes("roteador")
+        ){
+
+            relatorioHTML += `
+            <li>
+                ${material.nome}
+                Serial: <input type="text" class="serial-onu" placeholder="Digite o serial">
+            </li>
+            `;
+
+        }else{
+
+            relatorioHTML += `<li>${material.nome}</li>`;
+
+        }
 
         function init() {
             console.log("=== INIT CHAMADO ===");

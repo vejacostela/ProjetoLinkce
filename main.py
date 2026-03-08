@@ -151,12 +151,12 @@ async def gerar_relatorio(request: Request):
         data_atual = get_data_brasil()
 
         relatorio = f"""
-==================================
+=====================================
 Relatório Técnico - {data_atual}
-==================================
-╔                                ╖
-Técnico: {tecnico}              
-╙                                ╝
+=====================================
+                                
+> Técnico: {tecnico}              
+                                
 
 Problema encontrado:
 {relatorio_texto}
@@ -174,7 +174,7 @@ Materiais Utilizados:
 
 Materiais Recolhidos:
 {materiais_recolhidos if materiais_recolhidos else "Nenhum"}
-==================================
+=====================================
 """.strip()
 
         logger.info(f"✅ Relatório gerado - {tecnico}")
