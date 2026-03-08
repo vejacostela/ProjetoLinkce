@@ -669,7 +669,7 @@
             color: white;
             padding: 14px 20px;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 20px;
             box-shadow: 0 5px 20px rgba(0,0,0,0.25);
             opacity: 0;
             transition: all .3s ease;
@@ -810,7 +810,8 @@
                     </div>
                 </div>
 
-                <div id="infoToast" class="toast-info">     //----------------------MENSAGEM PRA MUDAR CONFORME VONTADE
+                <!--NOTIFICAÇÃO DA MENSAGEM------------------------------------------------------------------------------------------------->>
+                <div id="infoToast" class="toast-info">     
                     ⚡ Dica: Todas as fotos essencias da o.s forem adicionadas?.  
                 </div>
 
@@ -910,7 +911,7 @@
         }
 
 
-        window.addEventListener("load", function(){      /* TEMPO DA MENSSAGEN DE 5S */
+        window.addEventListener("load", function(){      /* TEMPO DA MENSSAGEN DE 5S -------------------------------------------------------------------------------------*/
 
             const toast = document.getElementById("infoToast");
 
@@ -920,7 +921,7 @@
 
             setTimeout(() => {
                 toast.classList.remove("show");
-            }, 5500);
+            }, 7500);
 
         });
 
