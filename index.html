@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Gerador de Relatório Técnico</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
@@ -181,7 +181,7 @@
             transform: translateY(-2px);
         }
 
-        /* Search Box */
+        /* Search Box - Melhorias para mobile */
         .search-container {
             position: relative;
             margin-bottom: 20px;
@@ -192,12 +192,12 @@
             display: flex;
             gap: 12px;
             align-items: center;
-            /*width: 100%; -------------------------------------------------------------*/
+            flex-wrap: wrap; /* Permite quebra em mobile */
         }
 
         .search-input-wrapper {
-            /*flex: 1;------------------------------------------------------------------*/
-            position: relative;
+            flex: 1;
+            min-width: 200px; /* Largura mínima para não ficar muito pequeno */
         }
 
         .search-input {
@@ -251,27 +251,41 @@
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
         }
 
+        /* Resultados da pesquisa - Corrigido para mobile */
         .search-results {
             position: absolute;
             top: calc(100% + 6px);
             left: 0;
-            /*right: 0;---------------------------------------------------------------------------------*/
             width: 100%;
-
             background: rgba(10, 14, 39, 0.98);
             border: 1px solid var(--border-color);
             border-radius: 16px;
-
-            max-height: 220px;        /* mostra aprox 4 itens */
-            overflow-y: auto;         /* scroll vertical */
-
-            z-index: 999999;          /* garante que fique acima de tudo */
-
+            max-height: 220px;
+            overflow-y: auto;
+            z-index: 999999;
             display: none;
-
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
 
-            width: 100%;
+        /* Ajuste específico para mobile - garantir que a lista apareça corretamente */
+        @media (max-width: 768px) {
+            .search-results {
+                position: fixed;
+                top: auto;
+                left: 20px;
+                right: 20px;
+                width: auto;
+                max-height: 300px;
+                z-index: 1000000;
+                background: #0a0e27;
+                border: 2px solid var(--primary-blue);
+            }
+            
+            /* Para quando o teclado está aberto */
+            .search-results.show {
+                display: block;
+                max-height: 40vh;
+            }
         }
 
         .search-results.show {
@@ -367,55 +381,6 @@
             animation: gradientShift 3s ease infinite;
         }
 
-        .mobile-search-panel{
-            position: fixed;
-            bottom: -100%;
-            left: 0;
-            right: 0;
-
-            height: 60%;
-            background: #0a0e27;
-
-            border-top-left-radius: 20px;
-            border-top-right-radius: 20px;
-
-            box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
-
-            transition: bottom 0.3s ease;
-
-            z-index: 99999;
-
-            display: flex;
-            flex-direction: column;
-        }   
-
-        .mobile-search-panel.active{
-            bottom: 0;
-        }
-
-        .mobile-search-header{
-            display: flex;
-            gap: 10px;
-            padding: 15px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .mobile-search-header input{
-            flex: 1;
-            padding: 10px;
-            border-radius: 10px;
-            border: none;
-        }
-
-        .mobile-search-results{
-            overflow-y: auto;
-            padding: 10px;
-        }
-
-
-
-
-
         @keyframes gradientShift {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
@@ -507,10 +472,10 @@
             }
         }
 
-        /* Responsive */
+        /* Responsive - Melhorias significativas para mobile */
         @media (max-width: 768px) {
             .card {
-                padding: 25px;
+                padding: 20px;
             }
 
             .card-title {
@@ -519,10 +484,12 @@
 
             .search-box {
                 flex-direction: column;
+                gap: 8px;
             }
 
             .search-input-wrapper {
                 width: 100%;
+                min-width: 100%;
             }
 
             .qty-input {
@@ -535,11 +502,69 @@
 
             .radio-group {
                 flex-direction: column;
+                gap: 10px;
             }
 
-            .search-results{
-                max-height: 180px;
+            .radio-item {
+                width: 100%;
+            }
+
+            /* Ajuste para inputs em mobile */
+            input[type="text"],
+            input[type="number"],
+            textarea,
+            .search-input,
+            .qty-input {
+                font-size: 16px; /* Previne zoom automático em iOS */
+                padding: 12px 15px;
+            }
+
+            /* Melhorias na lista de materiais */
+            .material-list {
+                padding: 10px;
+            }
+
+            .material-item {
+                font-size: 13px;
+                padding: 6px 12px;
+            }
+
+            /* Ajuste para o container de resultados */
+            .search-results {
+                max-height: 200px;
                 font-size: 14px;
+                position: fixed;
+                left: 20px;
+                right: 20px;
+                width: auto;
+                top: auto;
+                bottom: auto;
+                max-height: 40vh;
+            }
+
+            /* Garantir que o texto não fique muito pequeno */
+            body {
+                font-size: 16px;
+            }
+
+            .card-subtitle {
+                font-size: 14px;
+            }
+
+            label {
+                font-size: 13px;
+            }
+        }
+
+        /* Ajustes para telas muito pequenas */
+        @media (max-width: 380px) {
+            .card {
+                padding: 15px;
+            }
+
+            .material-item {
+                width: 100%;
+                justify-content: center;
             }
         }
 
@@ -567,6 +592,64 @@
             border-left: 3px solid var(--primary-color);
         }
 
+        /* Mobile Search Panel (se for usar) */
+        .mobile-search-panel {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+            height: 70%;
+            background: #0a0e27;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+            transition: bottom 0.3s ease;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+        }   
+
+        .mobile-search-panel.active {
+            bottom: 0;
+        }
+
+        .mobile-search-header {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .mobile-search-header input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid var(--border-color);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            font-size: 16px;
+        }
+
+        .mobile-search-header input:focus {
+            outline: none;
+            border-color: var(--primary-blue);
+        }
+
+        .mobile-search-header button {
+            padding: 12px 20px;
+            background: var(--primary-orange);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .mobile-search-results {
+            overflow-y: auto;
+            padding: 10px;
+            flex: 1;
+        }
     </style>
 </head>
 <body>
@@ -693,7 +776,10 @@
                 console.error("❌ Erro ao carregar materiais:", err);
                 materiaisDisponiveis = [
                     { nome: "CONECTOR APC", categoria: "Conectores" },
-                    { nome: "CABO DROP", categoria: "Cabos" }
+                    { nome: "CABO DROP", categoria: "Cabos" },
+                    { nome: "FUSÍVEL", categoria: "Elétrica" },
+                    { nome: "PARAFUSO", categoria: "Fixação" },
+                    { nome: "ABRAÇADEIRA", categoria: "Fixação" }
                 ];
                 init();
             }
@@ -745,7 +831,11 @@
                         const item = document.createElement('div');
                         item.className = 'search-item';
                         item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
-                        item.addEventListener('click', function() { selectMaterial(tipo, material, qtyInput); });
+                        item.addEventListener('click', function() { 
+                            selectMaterial(tipo, material, qtyInput);
+                            // Fechar resultados após selecionar no mobile
+                            resultsDiv.classList.remove('show');
+                        });
                         resultsDiv.appendChild(item);
                     });
                     resultsDiv.classList.add('show');
@@ -769,12 +859,16 @@
             });
             
             document.addEventListener('click', function(e) {
-                if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target) && !qtyInput.contains(e.target) && !document.getElementById('btnAdd' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).contains(e.target)) {
                     resultsDiv.classList.remove('show');
                 }
             });
-        }
 
+            // Fechar resultados ao rolar a página (útil para mobile)
+            window.addEventListener('scroll', function() {
+                resultsDiv.classList.remove('show');
+            }, { passive: true });
+        }
 
         function selectMaterial(tipo, material, qtyInput) {
             selectedMaterial[tipo] = material;
@@ -839,19 +933,6 @@
             document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).focus();
         }
 
-
-        function openMobileSearch(){
-            document.getElementById("mobileSearchPanel").classList.add("active");
-        }
-
-        function closeMobileSearch(){
-            document.getElementById("mobileSearchPanel").classList.remove("active");
-        }
-
-
-
-
-
         function updateMaterialList(tipo) {
             const listDiv = document.getElementById('list' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const textarea = document.getElementById('materiais_' + tipo);
@@ -915,6 +996,10 @@
                 const formData = new FormData(form);
                 const data = Object.fromEntries(formData.entries());
 
+                // Adicionar materiais aos dados
+                data.materiais_utilizados = materiaisUtilizados.join('\n');
+                data.materiais_recolhidos = materiaisRecolhidos.join('\n');
+
                 fetch("/gerar_relatorio", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -941,16 +1026,19 @@
                 });
             });
 
-            document.getElementById("btnCopiar").addEventListener("click", function() {
-                navigator.clipboard.writeText(textarea.value)
-                    .then(function() { 
-                        const btn = document.getElementById("btnCopiar");
-                        const original = btn.textContent;
-                        btn.textContent = "✅ Copiado!";
-                        setTimeout(() => btn.textContent = original, 2000);
-                    })
-                    .catch(function() { alert("Erro ao copiar"); });
-            });
+            const btnCopiar = document.getElementById("btnCopiar");
+            if (btnCopiar) {
+                btnCopiar.addEventListener("click", function() {
+                    navigator.clipboard.writeText(textarea.value)
+                        .then(function() { 
+                            const btn = document.getElementById("btnCopiar");
+                            const original = btn.textContent;
+                            btn.textContent = "✅ Copiado!";
+                            setTimeout(() => btn.textContent = original, 2000);
+                        })
+                        .catch(function() { alert("Erro ao copiar"); });
+                });
+            }
         }
 
         carregarMateriais();
@@ -958,14 +1046,11 @@
     </script>
 
     <div class="mobile-search-panel" id="mobileSearchPanel">
-
         <div class="mobile-search-header">
             <input type="text" id="mobileSearchInput" placeholder="Pesquisar material...">
-            <button onclick="closeMobileSearch()">Fechar</button>
+            <button onclick="document.getElementById('mobileSearchPanel').classList.remove('active')">Fechar</button>
         </div>
-
         <div class="mobile-search-results" id="mobileSearchResults"></div>
-
     </div>
 </body>
 </html>
