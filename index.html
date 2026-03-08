@@ -253,7 +253,7 @@
 
         .search-results {
             position: absolute;
-            top: calc(100% + 6px);
+            top: calc(100% + 8px);
             left: 0;
             right: 0;
 
@@ -366,6 +366,14 @@
             animation: gradientShift 3s ease infinite;
         }
 
+        @media (max-width: 768px){
+
+            .search-results{
+                max-height: 180px;
+                font-size: 14px;
+            }
+
+        }
 
         @keyframes gradientShift {
             0% { background-position: 0% 50%; }
