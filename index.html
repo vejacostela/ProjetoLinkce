@@ -1163,6 +1163,30 @@
             }
         }
 
+        function adicionarCamposSerial(textoRelatorio){
+
+            const linhas = textoRelatorio.split("\n");
+
+            const linhasAtualizadas = linhas.map(function(linha){
+
+                const lower = linha.toLowerCase();
+
+                if(lower.includes("onu") || lower.includes("roteador")){
+
+                    return linha + "  | Serial: __________";
+
+                }
+
+                return linha;
+
+            });
+
+            return linhasAtualizadas.join("\n");
+        }
+
+
+
+
         function setupForm() {
             const form = document.getElementById("formRelatorio");
             const btnSubmit = document.getElementById("btnSubmit");
@@ -1199,9 +1223,10 @@
                 .then(function(response) { return response.json(); })
                 .then(function(result) {
                     if (result.relatorio) {
-                        textarea.value = result.relatorio;
-                        container.style.display = "block";
-                        container.scrollIntoView({ behavior: "smooth" });
+
+                        const relatorioComSerial = adicionarCamposSerial(result.relatorio);
+                         textarea.value = relatorioComSerial;
+
                     } else {
                         throw new Error(result.error || "Erro desconhecido");
                     }
