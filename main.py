@@ -157,14 +157,13 @@ Relatório Técnico - {data_atual}
                                 
 > Técnico: {tecnico}              
                                 
-
 Problema encontrado:
 {relatorio_texto}
 
 Resolução do Problema:
 {problema_tecnico}
 
-Equipamento: {equipamento_status}
+Cabeou o(s) Equipamento(s): {equipamento_status}
 OBS: {equipamento_obs}
 
 Maior sinal de RSSI: {maior_sinal}
