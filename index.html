@@ -192,11 +192,11 @@
             display: flex;
             gap: 12px;
             align-items: center;
-            width: 100%;
+            /*width: 100%; -------------------------------------------------------------*/
         }
 
         .search-input-wrapper {
-            flex: 1;
+            /*flex: 1;------------------------------------------------------------------*/
             position: relative;
         }
 
@@ -253,9 +253,10 @@
 
         .search-results {
             position: absolute;
-            top: calc(100% + 8px);
+            top: calc(100% + 6px);
             left: 0;
-            right: 0;
+            /*right: 0;---------------------------------------------------------------------------------*/
+            width: 100%;
 
             background: rgba(10, 14, 39, 0.98);
             border: 1px solid var(--border-color);
@@ -365,6 +366,55 @@
             letter-spacing: 1px;
             animation: gradientShift 3s ease infinite;
         }
+
+        .mobile-search-panel{
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+
+            height: 60%;
+            background: #0a0e27;
+
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+
+            transition: bottom 0.3s ease;
+
+            z-index: 99999;
+
+            display: flex;
+            flex-direction: column;
+        }   
+
+        .mobile-search-panel.active{
+            bottom: 0;
+        }
+
+        .mobile-search-header{
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .mobile-search-header input{
+            flex: 1;
+            padding: 10px;
+            border-radius: 10px;
+            border: none;
+        }
+
+        .mobile-search-results{
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+
+
+
 
         @keyframes gradientShift {
             0% { background-position: 0% 50%; }
@@ -516,11 +566,6 @@
             background: rgba(78, 205, 196, 0.15);
             border-left: 3px solid var(--primary-color);
         }
-        .search-result-item.active {
-            background: rgba(78, 205, 196, 0.15);
-            border-left: 3px solid var(--primary-color);
-        }
-
 
     </style>
 </head>
@@ -794,6 +839,19 @@
             document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).focus();
         }
 
+
+        function openMobileSearch(){
+            document.getElementById("mobileSearchPanel").classList.add("active");
+        }
+
+        function closeMobileSearch(){
+            document.getElementById("mobileSearchPanel").classList.remove("active");
+        }
+
+
+
+
+
         function updateMaterialList(tipo) {
             const listDiv = document.getElementById('list' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const textarea = document.getElementById('materiais_' + tipo);
@@ -898,5 +956,16 @@
         carregarMateriais();
     })();
     </script>
+
+    <div class="mobile-search-panel" id="mobileSearchPanel">
+
+        <div class="mobile-search-header">
+            <input type="text" id="mobileSearchInput" placeholder="Pesquisar material...">
+            <button onclick="closeMobileSearch()">Fechar</button>
+        </div>
+
+        <div class="mobile-search-results" id="mobileSearchResults"></div>
+
+    </div>
 </body>
 </html>
