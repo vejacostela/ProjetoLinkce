@@ -188,20 +188,20 @@
             width: 100%;
         }
 
-        .search-box {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap; /* Permite quebra em mobile */
-        }
-
-        .search-input-wrapper {
-            flex: 1;
-            min-width: 200px; /* Largura mínima para não ficar muito pequeno */
+        .search-box{
+            display:flex;
+            gap:10px;
+            align-items:center;
+            width:100%;
         }
 
         .search-input-wrapper{
-           position: relative;
+            flex:6;
+            position:relative;
+        }
+
+        .qty-input{
+            flex:2;
         }
 
         .search-input {
@@ -274,24 +274,14 @@
 
         /* Ajuste específico para mobile - garantir que a lista apareça corretamente */
         @media (max-width: 768px) {
-            .search-results {
-                position: absolute;
-                top: calc(100% + 6px);
-                left: 0;
-                width: 100%;
-                max-height: 200px;
-                overflow-y: auto;
-                z-index: 9999;
-            }
-        }
-            
+        
         /* Para quando o teclado está aberto */
             .search-results.show {
                 display: block;
                 max-height: 40vh;
             }
-        
-
+        }    
+    
         .search-results.show {
             display: block;
             animation: slideDown 0.3s ease;
@@ -329,12 +319,7 @@
             gap:10px;
             width:100%;
         }
-
-        /* 60% busca */
-        .search-box{
-            flex:6;
-            position:relative;
-        }
+    
 
         .search-box input{
             width:100%;
@@ -357,17 +342,6 @@
             font-size:16px;
         }
 
-        /* 20% botão */
-        .btn-add{
-            flex:2;
-            border:none;
-            border-radius:12px;
-            background:linear-gradient(45deg,#ff7a3d,#ffb347);
-            color:black;
-            font-size:22px;
-            font-weight:bold;
-            cursor:pointer;
-        }
 
         /* Material List */
         .material-list {
@@ -392,6 +366,11 @@
             font-size: 14px;
             font-weight: 600;
             animation: popIn 0.3s ease;
+        }
+
+        .search-results.show{
+            display:block;
+            animation: slideDown 0.2s ease;
         }
 
         
@@ -537,7 +516,6 @@
             }
 
             .search-box {
-                flex-direction: column;
                 gap: 8px;
             }
 
@@ -548,10 +526,6 @@
 
             .qty-input {
                 width: 100% !important;
-            }
-
-            .btn-add {
-                width: 100%;
             }
 
             .radio-group {
@@ -587,7 +561,6 @@
             .search-results {
                 max-height: 200px;
                 font-size: 14px;
-                position: fixed;
                 left: 20px;
                 right: 20px;
                 width: auto;
@@ -749,20 +722,6 @@
                     </div>
                 </div>
 
-                <div class="materiais-linha">
-
-                        <div class="search-box">
-                            <input type="text" id="searchMaterial" placeholder="🔍 Buscar material...">
-                            <div id="searchResults" class="search-results"></div>
-                        </div>
-
-                    <input type="number" id="quantidade" value="1" min="1" class="quantidade">
-
-                    <button id="btnAdicionar" class="btn-add">+</button>
-
-                </div>
-
-
                 <div class="form-group">
                     <label>📌 Observações</label>
                     <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais sobre o equipamento..."></textarea>
@@ -781,7 +740,7 @@
                                 <input type="text" class="search-input" id="searchUtilizados" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
                             <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1">
-                            <button type="button" class="btn-add" id="btnAddUtilizados">Adicionar</button>
+                            <button type="button" class="btn-add" id="btnAddUtilizados">+</button>
                         </div>
                         <div class="search-results" id="resultsUtilizados"></div>
                     </div>
@@ -797,7 +756,7 @@
                                 <input type="text" class="search-input" id="searchRecolhidos" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
                             <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1">
-                            <button type="button" class="btn-add" id="btnAddRecolhidos">Adicionar</button>
+                            <button type="button" class="btn-add" id="btnAddRecolhidos">+</button>
                         </div>
                         <div class="search-results" id="resultsRecolhidos"></div>
                     </div>
@@ -830,6 +789,11 @@
         async function carregarMateriais() {
             try {
                 const response = await fetch('/api/materiais');
+
+                if (!response.ok) {
+                    throw new Error("Erro ao buscar materiais");
+                }
+
                 const data = await response.json();
                 materiaisDisponiveis = data.materiais || [];
                 
@@ -901,6 +865,7 @@
                         item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
                         item.addEventListener('click', function() { 
                             selectMaterial(tipo, material, qtyInput);
+                            addMaterial(tipo); // -------------------------------------------------------------------------------------------------------------
                             // Fechar resultados após selecionar no mobile
                             resultsDiv.classList.remove('show');
                         });
@@ -999,6 +964,8 @@
             qtyInput.value = '1';
             selectedMaterial[tipo] = null;
             document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).focus();
+
+            document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).classList.remove('show');
         }
 
         function updateMaterialList(tipo) {
@@ -1095,30 +1062,35 @@
             });
 
             const btnCopiar = document.getElementById("btnCopiar");
-            if (btnCopiar) {
-                btnCopiar.addEventListener("click", function() {
-                    navigator.clipboard.writeText(textarea.value)
-                        .then(function() { 
-                            const btn = document.getElementById("btnCopiar");
-                            const original = btn.textContent;
-                            btn.textContent = "✅ Copiado!";
-                            setTimeout(() => btn.textContent = original, 2000);
-                        })
-                        .catch(function() { alert("Erro ao copiar"); });
-                });
-            }
-        }
 
+                if (btnCopiar) {
+                    btnCopiar.addEventListener("click", function () {
+
+                        const texto = textarea.value;
+
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(texto).catch(function () {
+                            textarea.select();
+                            document.execCommand("copy");
+                        });
+                    } else {
+                        textarea.select();
+                        document.execCommand("copy");
+                    }
+
+                    const original = btnCopiar.textContent;
+                            btnCopiar.textContent = "✅ Copiado!";
+                            setTimeout(function () {
+                            btnCopiar.textContent = original;
+                        }, 2000);
+                    });      
+                }
+        }        
+        
+        
         carregarMateriais();
-    })();
-    </script>
+        })();
 
-    <div class="mobile-search-panel" id="mobileSearchPanel">
-        <div class="mobile-search-header">
-            <input type="text" id="mobileSearchInput" placeholder="Pesquisar material...">
-            <button onclick="document.getElementById('mobileSearchPanel').classList.remove('active')">Fechar</button>
-        </div>
-        <div class="mobile-search-results" id="mobileSearchResults"></div>
-    </div>
+    </script>
 </body>
 </html>
