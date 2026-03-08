@@ -951,25 +951,6 @@
 
         });
 
-
-        if(
-            material.nome.toLowerCase().includes("onu") ||
-            material.nome.toLowerCase().includes("roteador")
-        ){
-
-            relatorioHTML += `
-            <li>
-                ${material.nome}
-                Serial: <input type="text" class="serial-onu" placeholder="Digite o serial">
-            </li>
-            `;
-
-        }else{
-
-            relatorioHTML += `<li>${material.nome}</li>`;
-
-        }
-
         function init() {
             console.log("=== INIT CHAMADO ===");
             
