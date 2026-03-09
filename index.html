@@ -182,7 +182,6 @@
 
         /* Search Box */
         .search-container {
-            position: relative;
             margin-bottom: 20px;
             width: 100%;
         }
@@ -250,23 +249,21 @@
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
         }
 
-        .search-results {
-            position: absolute;
-            top: calc(100% + 8px);
-            left: 0;
-            right: 0;
+        /* Dropdown GLOBAL - Fora do card */
+        .search-dropdown {
+            position:relative ;
             background: rgba(10, 14, 39, 0.98);
             border: 1px solid var(--border-color);
             border-radius: 16px;
             max-height: 300px;
-            overflow-y: auto;
-            z-index: 1000;
-            display: none;
+            overflow-y:auto ;
+            z-index: 999999;
+            display:flexbox;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            width: 100%;
+            min-width: 300px;
         }
 
-        .search-results.show {
+        .search-dropdown.show {
             display: block;
             animation: slideDown 0.3s ease;
         }
@@ -502,6 +499,9 @@
     </style>
 </head>
 <body>
+    <!-- Dropdown GLOBAL - Fora do card (sempre no topo) -->
+    <div id="globalDropdown" class="search-dropdown"></div>
+
     <!-- Main Content -->
     <div class="container">
         <div class="card">
@@ -564,9 +564,8 @@
                             <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1">
                             <button type="button" class="btn-add" id="btnAddUtilizados">Adicionar</button>
                         </div>
-                        <div class="search-results" id="resultsUtilizados"></div>
+                        <div class="material-list" id="listUtilizados"></div>
                     </div>
-                    <div class="material-list" id="listUtilizados"></div>
                     <textarea name="materiais_utilizados" id="materiais_utilizados" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
                 </div>
 
@@ -580,9 +579,8 @@
                             <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1">
                             <button type="button" class="btn-add" id="btnAddRecolhidos">Adicionar</button>
                         </div>
-                        <div class="search-results" id="resultsRecolhidos"></div>
+                        <div class="material-list" id="listRecolhidos"></div>
                     </div>
-                    <div class="material-list" id="listRecolhidos"></div>
                     <textarea name="materiais_recolhidos" id="materiais_recolhidos" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
                 </div>
 
@@ -607,6 +605,12 @@
         let materiaisUtilizados = [];
         let materiaisRecolhidos = [];
         let selectedMaterial = { utilizados: null, recolhidos: null };
+        let activeDropdown = null;
+        let activeInput = null;
+        let activeQtyInput = null;
+
+        // Dropdown global único
+        const globalDropdown = document.getElementById('globalDropdown');
 
         async function carregarMateriais() {
             try {
@@ -647,24 +651,76 @@
             if (btnAddRec) {
                 btnAddRec.addEventListener('click', function() { addMaterial('recolhidos'); });
             }
+
+            // Fechar dropdown ao clicar fora
+            document.addEventListener('click', function(e) {
+                if (activeInput && !activeInput.contains(e.target) && !globalDropdown.contains(e.target)) {
+                    hideDropdown();
+                }
+            });
+
+            // Fechar dropdown ao rolar página
+            window.addEventListener('scroll', function() {
+                hideDropdown();
+            }, true);
+
+            // Reposicionar dropdown ao redimensionar
+            window.addEventListener('resize', function() {
+                if (activeInput && globalDropdown.classList.contains('show')) {
+                    positionDropdown(activeInput);
+                }
+            });
+        }
+
+        // Posicionar dropdown globalmente
+        function positionDropdown(inputElement) {
+            const rect = inputElement.getBoundingClientRect();
+            globalDropdown.style.top = (rect.bottom + window.scrollY + 8) + 'px';
+            globalDropdown.style.left = rect.left + 'px';
+            globalDropdown.style.width = rect.width + 'px';
+        }
+
+        // Mostrar dropdown
+        function showDropdown(items, inputElement, qtyInput) {
+            activeInput = inputElement;
+            activeQtyInput = qtyInput;
+            globalDropdown.innerHTML = '';
+            
+            items.forEach(function(material) {
+                const item = document.createElement('div');
+                item.className = 'search-item';
+                item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
+                item.addEventListener('click', function() {
+                    selectMaterial(material);
+                });
+                globalDropdown.appendChild(item);
+            });
+            
+            positionDropdown(inputElement);
+            globalDropdown.classList.add('show');
+        }
+
+        // Esconder dropdown
+        function hideDropdown() {
+            globalDropdown.classList.remove('show');
+            globalDropdown.innerHTML = '';
+            activeDropdown = null;
         }
 
         function setupSearch(tipo) {
             const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
-            const resultsDiv = document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const qtyInput = document.getElementById('qty' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             
-            if (!searchInput || !resultsDiv) {
-                console.error("Elementos não encontrados para:", tipo);
+            if (!searchInput) {
+                console.error("Input não encontrado para:", tipo);
                 return;
             }
             
             searchInput.addEventListener('input', function(e) {
                 const query = e.target.value.toLowerCase().trim();
-                resultsDiv.innerHTML = '';
                 
                 if (query.length < 1) {
-                    resultsDiv.classList.remove('show');
+                    hideDropdown();
                     return;
                 }
                 
@@ -673,16 +729,23 @@
                 });
                 
                 if (filtered.length > 0) {
-                    filtered.forEach(function(material) {
-                        const item = document.createElement('div');
-                        item.className = 'search-item';
-                        item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
-                        item.addEventListener('click', function() { selectMaterial(tipo, material, qtyInput); });
-                        resultsDiv.appendChild(item);
-                    });
-                    resultsDiv.classList.add('show');
+                    showDropdown(filtered, searchInput, qtyInput);
+                    activeDropdown = tipo;
                 } else {
-                    resultsDiv.classList.remove('show');
+                    hideDropdown();
+                }
+            });
+            
+            searchInput.addEventListener('focus', function() {
+                if (searchInput.value.length > 0) {
+                    const query = searchInput.value.toLowerCase().trim();
+                    const filtered = materiaisDisponiveis.filter(function(m) {
+                        return m.nome.toLowerCase().includes(query) || m.categoria.toLowerCase().includes(query);
+                    });
+                    if (filtered.length > 0) {
+                        showDropdown(filtered, searchInput, qtyInput);
+                        activeDropdown = tipo;
+                    }
                 }
             });
             
@@ -699,23 +762,20 @@
                     addMaterial(tipo);
                 }
             });
-            
-            document.addEventListener('click', function(e) {
-                if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
-                    resultsDiv.classList.remove('show');
-                }
-            });
         }
 
-        function selectMaterial(tipo, material, qtyInput) {
-            selectedMaterial[tipo] = material;
-            const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
-            searchInput.value = material.nome;
-            document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).classList.remove('show');
+        function selectMaterial(material) {
+            if (!activeInput) return;
+            
+            selectedMaterial[activeDropdown] = material;
+            activeInput.value = material.nome;
+            hideDropdown();
             
             setTimeout(function() {
-                qtyInput.focus();
-                qtyInput.select();
+                if (activeQtyInput) {
+                    activeQtyInput.focus();
+                    activeQtyInput.select();
+                }
             }, 50);
         }
 
