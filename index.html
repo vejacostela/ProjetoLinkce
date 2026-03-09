@@ -2,8 +2,8 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Gerador de Relatório Técnico</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Relatório Técnico LinkCE</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
@@ -66,6 +66,7 @@
             padding: 40px;
             box-shadow: var(--shadow);
             animation: fadeInUp 0.8s ease-out 0.2s both;
+            overflow: visible;
         }
 
         .card-title {
@@ -180,34 +181,41 @@
             transform: translateY(-2px);
         }
 
-        /* Search Box */
+        /* Search Box - Melhorias para mobile */
         .search-container {
             margin-bottom: 20px;
             width: 100%;
         }
 
-        .search-box {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            width: 100%;
+        .search-box{
+            display:flex;
+            gap:8px;
+            align-items:center;
+            width:100%;
         }
 
-        .search-input-wrapper {
-            flex: 1;
-            position: relative;
+        .search-input-wrapper{
+            flex:1 1 60%;
+        }
+
+        .qty-input{
+            flex:0 0 20%;
+            min-width:60px;
+            text-align:center;
+            font-weight:700;
+            border-radius:50px;
+            border:2px solid var(--primary-orange);
+            background:rgba(255,255,255,0.05);
+            color:white;
         }
 
         .search-input {
-            width: 100%;
-            padding: 14px 20px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 2px solid var(--border-color);
-            border-radius: 50px;
-            color: var(--text-primary);
-            font-size: 15px;
-            transition: all 0.3s ease;
-            outline: none;
+            width:100%;
+            padding:14px 18px;
+            border-radius:50px;
+            border:2px solid var(--border-color);
+            background:rgba(255,255,255,0.05);
+            color:white;
         }
 
         .search-input:focus {
@@ -230,9 +238,11 @@
         }
 
         .btn-add {
-            padding: 14px 28px;
+            
             background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
             border: none;
+            flex:0 0 20%;
+            padding:12px;
             border-radius: 50px;
             color: #0a0e27;
             font-weight: 700;
@@ -246,9 +256,11 @@
 
         .btn-add:hover {
             transform: translateY(-2px);
+            transform:scale(1.05);
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
         }
 
+<<<<<<< HEAD
         /* Dropdown GLOBAL - Fora do card */
         .search-dropdown {
             position:relative ;
@@ -264,6 +276,35 @@
         }
 
         .search-dropdown.show {
+=======
+        /* Resultados da pesquisa - Corrigido para mobile */
+        .search-results {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            width: 100%;
+            background: rgba(10, 14, 39, 0.98);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            max-height: 220px;
+            overflow-y: auto;
+            z-index: 999999;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Ajuste específico para mobile - garantir que a lista apareça corretamente */
+        @media (max-width: 768px) {
+        
+        /* Para quando o teclado está aberto */
+            .search-results.show {
+                /*display: block;*/
+                max-height: 40vh;
+            }
+        }    
+    
+        .search-results.show {
+>>>>>>> 30e601a1699e319ec7c30ea6793153c049f22baf
             display: block;
             animation: slideDown 0.3s ease;
         }
@@ -295,6 +336,68 @@
             color: var(--text-secondary);
         }
 
+        .materiais-linha{
+            display:flex;
+            gap:10px;
+            width:100%;
+        }
+    
+
+        .search-box input{
+            width:100%;
+            padding:12px;
+            border-radius:12px;
+            border:1px solid #444;
+            background:#1b1f38;
+            color:white;
+        }
+
+        .search-box{
+            gap:6px;
+        }
+
+        .search-input-wrapper{
+            flex:1 1 40%;
+        }
+
+        .qty-input{
+            flex:0 0 20%;
+            min-width:50px;
+            padding:10px;
+        }
+
+        .btn-add{
+            flex:0 0 20%;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            border:none;
+            border-radius:50px;
+            background:linear-gradient(135deg,var(--primary-orange),var(--primary-yellow));
+            font-weight:700;
+            font-size:18px;
+            cursor:pointer;
+            transition:all .25s ease;
+        }
+
+        .btn-add:hover{
+            transform:scale(1.05);
+       }
+
+
+        /* 20% quantidade */
+        .quantidade{
+            flex:2;
+            padding:12px;
+            border-radius:12px;
+            border:1px solid #ff7a3d;
+            background:transparent;
+            color:white;
+            text-align:center;
+            font-size:16px;
+        }
+
+
         /* Material List */
         .material-list {
             display: flex;
@@ -318,6 +421,16 @@
             font-size: 14px;
             font-weight: 600;
             animation: popIn 0.3s ease;
+        }
+
+        .search-results.show{
+            display:block;
+            animation: slideDown 0.2s ease;
+        }
+
+        
+        .materiais-linha{
+            flex-wrap:nowrap;
         }
 
         @keyframes popIn {
@@ -447,10 +560,10 @@
             }
         }
 
-        /* Responsive */
+        /* Responsive - Melhorias significativas para mobile */
         @media (max-width: 768px) {
             .card {
-                padding: 25px;
+                padding: 20px;
             }
 
             .card-title {
@@ -458,25 +571,161 @@
             }
 
             .search-box {
-                flex-direction: column;
+                gap: 6px;
             }
 
             .search-input-wrapper {
-                width: 100%;
+               flex:1 1 40%;
             }
 
             .qty-input {
-                width: 100% !important;
+               flex:0 0 20%;
+                min-width:50px;
+                padding:10px;
             }
 
-            .btn-add {
-                width: 100%;
-            }
+            .btn-add{
+                flex:0 0 25%;
+                padding:10px;
+                font-size:20px;
+            }    
 
             .radio-group {
                 flex-direction: column;
+                gap: 10px;
+            }
+
+            .radio-item {
+                width: 100%;
+            }
+
+            /* Ajuste para inputs em mobile */
+            input[type="text"],
+            input[type="number"],
+            textarea,
+            .search-input,
+            .qty-input {
+                font-size: 16px; /* Previne zoom automático em iOS */
+                padding: 12px 15px;
+            }
+
+            /* Melhorias na lista de materiais */
+            .material-list {
+                padding: 10px;
+            }
+
+            .material-item {
+                font-size: 13px;
+                padding: 6px 12px;
+            }
+
+            /* Ajuste para o container de resultados */
+            .search-results {
+                max-height: 200px;
+                font-size: 14px;
+                left: 20px;
+                right: 20px;
+                width: auto;
+                top: auto;
+                bottom: auto;
+                max-height: 40vh;
+            }
+
+            /* Garantir que o texto não fique muito pequeno */
+            body {
+                font-size: 16px;
+            }
+
+            .card-subtitle {
+                font-size: 14px;
+            }
+
+            label {
+                font-size: 13px;
             }
         }
+
+        /* Ajustes para telas muito pequenas */
+        @media (max-width: 380px) {
+            .card {
+                padding: 10px;
+            }
+
+            .material-item {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .search-box{
+                gap:6px;
+            }
+
+            .search-input-wrapper{
+                flex:1 1 35%;
+            }
+
+            .qty-input{
+                flex:0 0 20%;
+                min-width:50px;
+                padding:10px;
+            }
+
+            .btn-add{
+                flex:0 0 25%;
+                padding:10px;
+                font-size:20px;
+            }
+        }
+
+        .toast-info{             /* CSS da mensagen rapida ------------------------------------------------------------------------------------ */
+            position:fixed;
+            top: 20px;
+            left: 50%;
+            right: 20px;
+            transform: translateX(-50%) translateY(-20px);
+            background: #1e293b;
+            color: white;
+            padding: 14px 20px;
+            border-radius: 10px;
+            font-size: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.25);
+            opacity: 0;
+            transition: all .3s ease;
+            z-index: 9999;
+            border: 2px solid #f59e0b;
+        }
+
+        .toast-info.show{
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            animation: pulseBorder 1.8s infinite;
+        }
+
+        @keyframes pulseBorder {
+
+            0%{
+                box-shadow: 0 0 0 0 rgba(245,158,11,0.6);
+            }   
+
+            50%{
+                box-shadow: 0 0 10px 4px rgba(245,158,11,0.7);
+            }   
+
+            100%{
+                box-shadow: 0 0 0 0 rgba(245,158,11,0.6);
+            }
+
+        }   
+
+        .serial-onu{     /* SERIAL DE EQUIPAMENTO------------------------------------------------------------------------------------ */
+            margin-left: 8px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 170px;
+        }
+
 
         /* Scrollbar */
         ::-webkit-scrollbar {
@@ -496,6 +745,70 @@
         ::-webkit-scrollbar-thumb:hover {
             background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
         }
+
+        .search-result-item.active {
+            background: rgba(78, 205, 196, 0.15);
+            border-left: 3px solid var(--primary-color);
+        }
+
+        /* Mobile Search Panel (se for usar) */
+        .mobile-search-panel {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+            height: 70%;
+            background: #0a0e27;
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            box-shadow: 0 -10px 40px rgba(0,0,0,0.6);
+            transition: bottom 0.3s ease;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+        }   
+
+        .mobile-search-panel.active {
+            bottom: 0;
+        }
+
+        .mobile-search-header {
+            display: flex;
+            gap: 10px;
+            padding: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .mobile-search-header input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid var(--border-color);
+            background: rgba(255,255,255,0.05);
+            color: white;
+            font-size: 16px;
+        }
+
+        .mobile-search-header input:focus {
+            outline: none;
+            border-color: var(--primary-blue);
+        }
+
+        .mobile-search-header button {
+            padding: 12px 20px;
+            background: var(--primary-orange);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .mobile-search-results {
+            overflow-y: auto;
+            padding: 10px;
+            flex: 1;
+        }
     </style>
 </head>
 <body>
@@ -505,7 +818,7 @@
     <!-- Main Content -->
     <div class="container">
         <div class="card">
-            <h1 class="card-title">Novo Relatório</h1>
+            <h1 class="card-title">Relatório Técnico</h1>
             <p class="card-subtitle">Preencha os dados abaixo para gerar seu relatório técnico</p>
 
             <div id="mensagemErro" class="error"></div>
@@ -517,17 +830,17 @@
                 </div>
 
                 <div class="form-group">
-                    <label>📝 Relatório - O que foi feito</label>
+                    <label>📝 Relatório - Problema Encontrado</label>
                     <textarea name="relatorio_texto" rows="4" placeholder="Descreva as atividades realizadas..." required></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label>⚠️ Problema Encontrado</label>
+                    <label>⚠️ Resolução do Problema</label>
                     <textarea name="problema_tecnico" rows="4" placeholder="Descreva o problema identificado..." required></textarea>
                 </div>
 
                 <div class="form-group">
-                    <label>🔧 Equipamento</label>
+                    <label>🔧 Equipamento(s) no cabo de rede</label>
                     <div class="radio-group">
                         <div class="radio-item">
                             <input type="radio" name="equipamento_status" value="Cabeado" id="cabeado" required>
@@ -544,8 +857,13 @@
                     </div>
                 </div>
 
+                <!--NOTIFICAÇÃO DA MENSAGEM------------------------------------------------------------------------------------------------->>
+                <div id="infoToast" class="toast-info">     
+                    ⚡ Dica: Todas as fotos essencias da o.s forem adicionadas?.  
+                </div>
+
                 <div class="form-group">
-                    <label>📌 Observações</label>
+                    <label>📌 Observações </label>
                     <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais sobre o equipamento..."></textarea>
                 </div>
 
@@ -561,8 +879,8 @@
                             <div class="search-input-wrapper">
                                 <input type="text" class="search-input" id="searchUtilizados" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
-                            <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1">
-                            <button type="button" class="btn-add" id="btnAddUtilizados">Adicionar</button>
+                            <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1 ">
+                            <button type="button" class="btn-add" id="btnAddUtilizados">+</button>
                         </div>
                         <div class="material-list" id="listUtilizados"></div>
                     </div>
@@ -576,8 +894,8 @@
                             <div class="search-input-wrapper">
                                 <input type="text" class="search-input" id="searchRecolhidos" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
-                            <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1">
-                            <button type="button" class="btn-add" id="btnAddRecolhidos">Adicionar</button>
+                            <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1 ">
+                            <button type="button" class="btn-add" id="btnAddRecolhidos">+</button>
                         </div>
                         <div class="material-list" id="listRecolhidos"></div>
                     </div>
@@ -591,7 +909,7 @@
 
             <div class="relatorio-gerado" id="relatorioContainer" style="display:none;">
                 <h2 style="margin-bottom: 15px; font-size: 24px;">📄 Relatório Gerado</h2>
-                <textarea id="relatorioTexto" readonly rows="15"></textarea>
+                <textarea id="relatorioTexto" rows="15"></textarea>
                 <button type="button" class="btn-copiar" id="btnCopiar">📋 Copiar Relatório</button>
             </div>
         </div>
@@ -615,6 +933,11 @@
         async function carregarMateriais() {
             try {
                 const response = await fetch('/api/materiais');
+
+                if (!response.ok) {
+                    throw new Error("Erro ao buscar materiais");
+                }
+
                 const data = await response.json();
                 materiaisDisponiveis = data.materiais || [];
                 
@@ -629,11 +952,29 @@
                 console.error("❌ Erro ao carregar materiais:", err);
                 materiaisDisponiveis = [
                     { nome: "CONECTOR APC", categoria: "Conectores" },
-                    { nome: "CABO DROP", categoria: "Cabos" }
+                    { nome: "CABO DROP", categoria: "Cabos" },
+                    { nome: "FUSÍVEL", categoria: "Elétrica" },
+                    { nome: "PARAFUSO", categoria: "Fixação" },
+                    { nome: "ABRAÇADEIRA", categoria: "Fixação" }
                 ];
                 init();
             }
         }
+
+
+        window.addEventListener("load", function(){      /* TEMPO DA MENSSAGEN DE 5S -------------------------------------------------------------------------------------*/
+
+            const toast = document.getElementById("infoToast");
+
+            setTimeout(() => {
+                toast.classList.add("show");
+            }, 500);
+
+            setTimeout(() => {
+                toast.classList.remove("show");
+            }, 7500);
+
+        });
 
         function init() {
             console.log("=== INIT CHAMADO ===");
@@ -724,13 +1065,32 @@
                     return;
                 }
                 
-                const filtered = materiaisDisponiveis.filter(function(m) {
-                    return m.nome.toLowerCase().includes(query) || m.categoria.toLowerCase().includes(query);
-                });
+                const filtered = materiaisDisponiveis
+                .filter(function(m) {
+                    return m.nome.toLowerCase().includes(query) || m.categoria.toLowerCase().includes(query);   
+                })
+                .slice(0,4);// LIMITAR BUSCA A 4 RESULTADOS
+                
                 
                 if (filtered.length > 0) {
+<<<<<<< HEAD
                     showDropdown(filtered, searchInput, qtyInput);
                     activeDropdown = tipo;
+=======
+                    filtered.forEach(function(material) {
+                        const item = document.createElement('div');
+                        item.className = 'search-item';
+                        item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
+                        item.addEventListener('click', function() { 
+                            selectMaterial(tipo, material, qtyInput);
+                            //addMaterial(tipo); // -------------------------------------------------------------------------------------------------------------
+                            // Fechar resultados após selecionar no mobile
+                            resultsDiv.classList.remove('show');
+                        });
+                        resultsDiv.appendChild(item);
+                    });
+                    resultsDiv.classList.add('show');
+>>>>>>> 30e601a1699e319ec7c30ea6793153c049f22baf
                 } else {
                     hideDropdown();
                 }
@@ -762,6 +1122,20 @@
                     addMaterial(tipo);
                 }
             });
+<<<<<<< HEAD
+=======
+            
+            document.addEventListener('click', function(e) {
+                if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target) && !qtyInput.contains(e.target) && !document.getElementById('btnAdd' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).contains(e.target)) {
+                    resultsDiv.classList.remove('show');
+                }
+            });
+
+            // Fechar resultados ao rolar a página (útil para mobile)
+            window.addEventListener('scroll', function() {
+                resultsDiv.classList.remove('show');
+            }, { passive: true });
+>>>>>>> 30e601a1699e319ec7c30ea6793153c049f22baf
         }
 
         function selectMaterial(material) {
@@ -828,6 +1202,8 @@
             qtyInput.value = '1';
             selectedMaterial[tipo] = null;
             document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).focus();
+
+            document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).classList.remove('show');
         }
 
         function updateMaterialList(tipo) {
@@ -869,6 +1245,30 @@
             }
         }
 
+        function adicionarCamposSerial(textoRelatorio){
+
+            const linhas = textoRelatorio.split("\n");
+
+            const linhasAtualizadas = linhas.map(function(linha){
+
+                const lower = linha.toLowerCase();
+
+                if(lower.includes("onu") || lower.includes("roteador")){
+
+                    return linha + "  | Serial: __________";
+
+                }
+
+                return linha;
+
+            });
+
+            return linhasAtualizadas.join("\n");
+        }
+
+
+
+
         function setupForm() {
             const form = document.getElementById("formRelatorio");
             const btnSubmit = document.getElementById("btnSubmit");
@@ -893,6 +1293,10 @@
                 const formData = new FormData(form);
                 const data = Object.fromEntries(formData.entries());
 
+                // Adicionar materiais aos dados
+                data.materiais_utilizados = materiaisUtilizados.join('\n');
+                data.materiais_recolhidos = materiaisRecolhidos.join('\n');
+
                 fetch("/gerar_relatorio", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -901,9 +1305,18 @@
                 .then(function(response) { return response.json(); })
                 .then(function(result) {
                     if (result.relatorio) {
-                        textarea.value = result.relatorio;
-                        container.style.display = "block";
-                        container.scrollIntoView({ behavior: "smooth" });
+
+                        const relatorioComSerial = adicionarCamposSerial(result.relatorio);
+
+                        textarea.value = relatorioComSerial;
+
+                        container.style.display = "block";   // MOSTRA O RELATÓRIO
+
+                        textarea.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center"
+                        });
+
                     } else {
                         throw new Error(result.error || "Erro desconhecido");
                     }
@@ -919,20 +1332,36 @@
                 });
             });
 
-            document.getElementById("btnCopiar").addEventListener("click", function() {
-                navigator.clipboard.writeText(textarea.value)
-                    .then(function() { 
-                        const btn = document.getElementById("btnCopiar");
-                        const original = btn.textContent;
-                        btn.textContent = "✅ Copiado!";
-                        setTimeout(() => btn.textContent = original, 2000);
-                    })
-                    .catch(function() { alert("Erro ao copiar"); });
-            });
-        }
+            const btnCopiar = document.getElementById("btnCopiar");
 
+                if (btnCopiar) {
+                    btnCopiar.addEventListener("click", function () {
+
+                        const texto = textarea.value;
+
+                        if (navigator.clipboard) {
+                            navigator.clipboard.writeText(texto).catch(function () {
+                            textarea.select();
+                            document.execCommand("copy");
+                        });
+                    } else {
+                        textarea.select();
+                        document.execCommand("copy");
+                    }
+
+                    const original = btnCopiar.textContent;
+                            btnCopiar.textContent = "✅ Copiado!";
+                            setTimeout(function () {
+                            btnCopiar.textContent = original;
+                        }, 2000);
+                    });      
+                }
+        }        
+        
+        
         carregarMateriais();
-    })();
+        })();
+
     </script>
 </body>
 </html>
