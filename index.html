@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Relatório Técnico LinkCE</title>
+    <title>Gerador de Relatório Técnico</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -183,6 +183,7 @@
 
         /* Search Box - Melhorias para mobile */
         .search-container {
+            position: relative;
             margin-bottom: 20px;
             width: 100%;
         }
@@ -260,23 +261,6 @@
             box-shadow: 0 8px 25px rgba(255, 107, 53, 0.4);
         }
 
-<<<<<<< HEAD
-        /* Dropdown GLOBAL - Fora do card */
-        .search-dropdown {
-            position:relative ;
-            background: rgba(10, 14, 39, 0.98);
-            border: 1px solid var(--border-color);
-            border-radius: 16px;
-            max-height: 300px;
-            overflow-y:auto ;
-            z-index: 999999;
-            display:flexbox;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            min-width: 300px;
-        }
-
-        .search-dropdown.show {
-=======
         /* Resultados da pesquisa - Corrigido para mobile */
         .search-results {
             position: absolute;
@@ -304,7 +288,6 @@
         }    
     
         .search-results.show {
->>>>>>> 30e601a1699e319ec7c30ea6793153c049f22baf
             display: block;
             animation: slideDown 0.3s ease;
         }
@@ -678,16 +661,15 @@
         }
 
         .toast-info{             /* CSS da mensagen rapida ------------------------------------------------------------------------------------ */
-            position:fixed;
+            position: fixed;
             top: 20px;
             left: 50%;
-            right: 20px;
             transform: translateX(-50%) translateY(-20px);
             background: #1e293b;
             color: white;
             padding: 14px 20px;
             border-radius: 10px;
-            font-size: 20px;
+            font-size: 14px;
             box-shadow: 0 5px 20px rgba(0,0,0,0.25);
             opacity: 0;
             transition: all .3s ease;
@@ -812,9 +794,6 @@
     </style>
 </head>
 <body>
-    <!-- Dropdown GLOBAL - Fora do card (sempre no topo) -->
-    <div id="globalDropdown" class="search-dropdown"></div>
-
     <!-- Main Content -->
     <div class="container">
         <div class="card">
@@ -879,11 +858,12 @@
                             <div class="search-input-wrapper">
                                 <input type="text" class="search-input" id="searchUtilizados" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
-                            <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1 ">
+                            <input type="number" class="qty-input" id="qtyUtilizados" placeholder="Qtd" min="1" value="1">
                             <button type="button" class="btn-add" id="btnAddUtilizados">+</button>
                         </div>
-                        <div class="material-list" id="listUtilizados"></div>
+                        <div class="search-results" id="resultsUtilizados"></div>
                     </div>
+                    <div class="material-list" id="listUtilizados"></div>
                     <textarea name="materiais_utilizados" id="materiais_utilizados" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
                 </div>
 
@@ -894,11 +874,12 @@
                             <div class="search-input-wrapper">
                                 <input type="text" class="search-input" id="searchRecolhidos" placeholder="🔍 Buscar material..." autocomplete="off">
                             </div>
-                            <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1 ">
+                            <input type="number" class="qty-input" id="qtyRecolhidos" placeholder="Qtd" min="1" value="1">
                             <button type="button" class="btn-add" id="btnAddRecolhidos">+</button>
                         </div>
-                        <div class="material-list" id="listRecolhidos"></div>
+                        <div class="search-results" id="resultsRecolhidos"></div>
                     </div>
+                    <div class="material-list" id="listRecolhidos"></div>
                     <textarea name="materiais_recolhidos" id="materiais_recolhidos" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
                 </div>
 
@@ -909,7 +890,7 @@
 
             <div class="relatorio-gerado" id="relatorioContainer" style="display:none;">
                 <h2 style="margin-bottom: 15px; font-size: 24px;">📄 Relatório Gerado</h2>
-                <textarea id="relatorioTexto" rows="15"></textarea>
+                <textarea id="relatorioTexto" readonly rows="15"></textarea>
                 <button type="button" class="btn-copiar" id="btnCopiar">📋 Copiar Relatório</button>
             </div>
         </div>
@@ -923,12 +904,6 @@
         let materiaisUtilizados = [];
         let materiaisRecolhidos = [];
         let selectedMaterial = { utilizados: null, recolhidos: null };
-        let activeDropdown = null;
-        let activeInput = null;
-        let activeQtyInput = null;
-
-        // Dropdown global único
-        const globalDropdown = document.getElementById('globalDropdown');
 
         async function carregarMateriais() {
             try {
@@ -992,76 +967,24 @@
             if (btnAddRec) {
                 btnAddRec.addEventListener('click', function() { addMaterial('recolhidos'); });
             }
-
-            // Fechar dropdown ao clicar fora
-            document.addEventListener('click', function(e) {
-                if (activeInput && !activeInput.contains(e.target) && !globalDropdown.contains(e.target)) {
-                    hideDropdown();
-                }
-            });
-
-            // Fechar dropdown ao rolar página
-            window.addEventListener('scroll', function() {
-                hideDropdown();
-            }, true);
-
-            // Reposicionar dropdown ao redimensionar
-            window.addEventListener('resize', function() {
-                if (activeInput && globalDropdown.classList.contains('show')) {
-                    positionDropdown(activeInput);
-                }
-            });
-        }
-
-        // Posicionar dropdown globalmente
-        function positionDropdown(inputElement) {
-            const rect = inputElement.getBoundingClientRect();
-            globalDropdown.style.top = (rect.bottom + window.scrollY + 8) + 'px';
-            globalDropdown.style.left = rect.left + 'px';
-            globalDropdown.style.width = rect.width + 'px';
-        }
-
-        // Mostrar dropdown
-        function showDropdown(items, inputElement, qtyInput) {
-            activeInput = inputElement;
-            activeQtyInput = qtyInput;
-            globalDropdown.innerHTML = '';
-            
-            items.forEach(function(material) {
-                const item = document.createElement('div');
-                item.className = 'search-item';
-                item.innerHTML = '<div class="search-item-name">' + material.nome + '</div><div class="search-item-category">' + material.categoria + '</div>';
-                item.addEventListener('click', function() {
-                    selectMaterial(material);
-                });
-                globalDropdown.appendChild(item);
-            });
-            
-            positionDropdown(inputElement);
-            globalDropdown.classList.add('show');
-        }
-
-        // Esconder dropdown
-        function hideDropdown() {
-            globalDropdown.classList.remove('show');
-            globalDropdown.innerHTML = '';
-            activeDropdown = null;
         }
 
         function setupSearch(tipo) {
             const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
+            const resultsDiv = document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             const qtyInput = document.getElementById('qty' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
             
-            if (!searchInput) {
-                console.error("Input não encontrado para:", tipo);
+            if (!searchInput || !resultsDiv) {
+                console.error("Elementos não encontrados para:", tipo);
                 return;
             }
             
             searchInput.addEventListener('input', function(e) {
                 const query = e.target.value.toLowerCase().trim();
+                resultsDiv.innerHTML = '';
                 
                 if (query.length < 1) {
-                    hideDropdown();
+                    resultsDiv.classList.remove('show');
                     return;
                 }
                 
@@ -1073,10 +996,6 @@
                 
                 
                 if (filtered.length > 0) {
-<<<<<<< HEAD
-                    showDropdown(filtered, searchInput, qtyInput);
-                    activeDropdown = tipo;
-=======
                     filtered.forEach(function(material) {
                         const item = document.createElement('div');
                         item.className = 'search-item';
@@ -1090,22 +1009,8 @@
                         resultsDiv.appendChild(item);
                     });
                     resultsDiv.classList.add('show');
->>>>>>> 30e601a1699e319ec7c30ea6793153c049f22baf
                 } else {
-                    hideDropdown();
-                }
-            });
-            
-            searchInput.addEventListener('focus', function() {
-                if (searchInput.value.length > 0) {
-                    const query = searchInput.value.toLowerCase().trim();
-                    const filtered = materiaisDisponiveis.filter(function(m) {
-                        return m.nome.toLowerCase().includes(query) || m.categoria.toLowerCase().includes(query);
-                    });
-                    if (filtered.length > 0) {
-                        showDropdown(filtered, searchInput, qtyInput);
-                        activeDropdown = tipo;
-                    }
+                    resultsDiv.classList.remove('show');
                 }
             });
             
@@ -1122,8 +1027,6 @@
                     addMaterial(tipo);
                 }
             });
-<<<<<<< HEAD
-=======
             
             document.addEventListener('click', function(e) {
                 if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target) && !qtyInput.contains(e.target) && !document.getElementById('btnAdd' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).contains(e.target)) {
@@ -1135,21 +1038,17 @@
             window.addEventListener('scroll', function() {
                 resultsDiv.classList.remove('show');
             }, { passive: true });
->>>>>>> 30e601a1699e319ec7c30ea6793153c049f22baf
         }
 
-        function selectMaterial(material) {
-            if (!activeInput) return;
-            
-            selectedMaterial[activeDropdown] = material;
-            activeInput.value = material.nome;
-            hideDropdown();
+        function selectMaterial(tipo, material, qtyInput) {
+            selectedMaterial[tipo] = material;
+            const searchInput = document.getElementById('search' + tipo.charAt(0).toUpperCase() + tipo.slice(1));
+            searchInput.value = material.nome;
+            document.getElementById('results' + tipo.charAt(0).toUpperCase() + tipo.slice(1)).classList.remove('show');
             
             setTimeout(function() {
-                if (activeQtyInput) {
-                    activeQtyInput.focus();
-                    activeQtyInput.select();
-                }
+                qtyInput.focus();
+                qtyInput.select();
             }, 50);
         }
 
@@ -1307,15 +1206,7 @@
                     if (result.relatorio) {
 
                         const relatorioComSerial = adicionarCamposSerial(result.relatorio);
-
-                        textarea.value = relatorioComSerial;
-
-                        container.style.display = "block";   // MOSTRA O RELATÓRIO
-
-                        textarea.scrollIntoView({
-                            behavior: "smooth",
-                            block: "center"
-                        });
+                         textarea.value = relatorioComSerial;
 
                     } else {
                         throw new Error(result.error || "Erro desconhecido");
