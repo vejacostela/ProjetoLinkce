@@ -764,7 +764,7 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <!-- REPORT CONTAINER - NOW VISIBLE AFTER GENERATION -->
 <div class="relatorio-gerado" id="relatorioContainer">
 <h2 style="margin-bottom: 15px; font-size: 24px;">📄 Relatório Gerado</h2>
-<textarea id="relatorioTexto" readonly rows="15"></textarea>
+<textarea id="relatorioTexto" rows="20"></textarea>
 <button type="button" class="btn-copiar" id="btnCopiar">📋 Copiar Relatório</button>
 </div>
 </div>
@@ -1006,7 +1006,7 @@ const itens = [
 { name: "check_local_ont", nome: "Local da ONT identificação" },
 { name: "check_frente", nome: "Frente da casa" }
 ];
-let texto = "\n════════════════════════\n CHECKLIST DE FOTOS:\n════════════════════════\n";
+let texto = "\n═══════════════════════════\n CHECKLIST DE FOTOS:\n═══════════════════════════\n";
 itens.forEach(function(item) {
 const checkbox = document.querySelector('input[name="' + item.name + '"]');
 const marcado = checkbox ? checkbox.checked : false;
