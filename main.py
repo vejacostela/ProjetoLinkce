@@ -146,6 +146,9 @@ async def gerar_relatorio(request: Request):
         maior_sinal = data.get("maior_sinal", "").strip()
         materiais_utilizados = data.get("materiais_utilizados", "").strip()
         materiais_recolhidos = data.get("materiais_recolhidos", "").strip()
+        
+        # ✅ NOVO: Receber checklist de fotos
+        checklist_fotos = data.get("checklist_fotos", "").strip()
 
         # ✅ DATA/HORA DO BRASIL (UTC-3)
         data_atual = get_data_brasil()
@@ -173,6 +176,8 @@ Materiais Utilizados:
 
 Materiais Recolhidos:
 {materiais_recolhidos if materiais_recolhidos else "Nenhum"}
+{f'''
+{checklist_fotos}''' if checklist_fotos else ''}
 =====================================
 """.strip()
 

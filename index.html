@@ -1058,8 +1058,8 @@ return response.json();
 console.log("📥 Resultado:", result);
 if (result.relatorio) {
 const relatorioComSerial = adicionarCamposSerial(result.relatorio);
-const checklistFotos = gerarChecklistFotos();
-textarea.value = relatorioComSerial + checklistFotos;
+textarea.value = relatorioComSerial;
+
 // MOSTRAR CONTAINER DO RELATÓRIO
 container.style.display = "block";
 container.scrollIntoView({ behavior: "smooth" });
