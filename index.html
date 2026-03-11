@@ -986,8 +986,8 @@ function adicionarCamposSerial(textoRelatorio){
 const linhas = textoRelatorio.split("\n");
 const linhasAtualizadas = linhas.map(function(linha){
 const lower = linha.toLowerCase();
-if(lower.includes("onu") || lower.includes("roteador")){
-return linha + "  | Serial: __________";
+if(lower.includes("onu") || lower.includes("roteador") || lower.includes("mesh") || lower.includes("dlink")){
+return linha + "  | Serial: ";
 }
 return linha;
 });
@@ -1006,7 +1006,7 @@ const itens = [
 { name: "check_local_ont", nome: "Local da ONT identificação" },
 { name: "check_frente", nome: "Frente da casa" }
 ];
-let texto = "\n═══════════════════════════\n CHECKLIST DE FOTOS:\n═══════════════════════════\n";
+let texto = "\n═══════════════════════════════\n CHECKLIST DE FOTOS:\n═══════════════════════════════\n";
 itens.forEach(function(item) {
 const checkbox = document.querySelector('input[name="' + item.name + '"]');
 const marcado = checkbox ? checkbox.checked : false;
