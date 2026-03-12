@@ -1010,7 +1010,7 @@ let texto = "\n═════════════════════�
 itens.forEach(function(item) {
 const checkbox = document.querySelector('input[name="' + item.name + '"]');
 const marcado = checkbox ? checkbox.checked : false;
-texto += (marcado ? "✔ " : "✘ ") + item.nome + "\n";
+texto += (marcado ? "V " : "X ") + item.nome + "\n";
 });
 const obsInput = document.querySelector('textarea[name="obs_fotos"]');
 const obs = obsInput ? obsInput.value.trim() : '';
