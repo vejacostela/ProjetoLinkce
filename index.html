@@ -990,7 +990,7 @@ function adicionarCamposSerial(textoRelatorio){
 const linhas = textoRelatorio.split("\n");
 const linhasAtualizadas = linhas.map(function(linha){
 const lower = linha.toLowerCase();
-if(lower.includes("onu") || lower.includes("roteador") || lower.includes("mesh") || lower.includes("dlink")){
+if(lower.includes("onu") || lower.includes("roteador") || lower.includes("mesh") || lower.includes("dlink") || lower.includes('router')){
 return linha + "  | Serial: ";
 }
 return linha;
