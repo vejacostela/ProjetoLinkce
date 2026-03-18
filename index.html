@@ -987,15 +987,30 @@ updateMaterialList('recolhidos');
 }
 
 function adicionarCamposSerial(textoRelatorio){
-const linhas = textoRelatorio.split("\n");
-const linhasAtualizadas = linhas.map(function(linha){
-const lower = linha.toLowerCase();
-if(lower.includes("onu") || lower.includes("roteador") || lower.includes("mesh") || lower.includes("dlink") || lower.includes('router')){
-return linha + "  | Serial: ";
-}
-return linha;
-});
-return linhasAtualizadas.join("\n");
+    const linhas = textoRelatorio.split("\n");
+    const linhasAtualizadas = linhas.map(function(linha){
+        const lower = linha.toLowerCase();
+        const linhaTrim = linha.trim();
+        
+        // ✅ Verifica se é linha de material (padrão: "77:BOBINA..." ou "1:ONU...")
+        const ehLinhaMaterial = /^\d+:/.test(linhaTrim);
+        
+        // ✅ Verifica se contém equipamento que precisa de serial
+        const temEquipamento = lower.includes("onu") || 
+                               lower.includes("roteador") || 
+                               lower.includes("mesh") || 
+                               lower.includes("router")||
+                               lower.includes("dlink");
+        
+        // ✅ Adiciona campo Serial APENAS se for material E tiver equipamento
+        if (ehLinhaMaterial && temEquipamento) {
+            if (!linha.includes("| Serial:")) {
+                return linha + "  | Serial: ";
+            }
+        }
+        return linha;
+    });
+    return linhasAtualizadas.join("\n");
 }
 
 function gerarChecklistFotos() {

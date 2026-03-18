@@ -160,7 +160,7 @@ Relatório Técnico - {data_atual}
                                 
 > Técnico: {tecnico}              
                                 
-Problema encontrado:
+Situação encontrado:
 {relatorio_texto}
 
 Resolução do Problema:
