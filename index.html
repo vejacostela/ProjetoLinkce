@@ -564,7 +564,7 @@ font-size: 20px;
 }
 
 #infoToast{
-display:none !important;    
+/* O alerta é controlado pela classe show. */    
 }
 
 /* TOAST */
@@ -842,6 +842,7 @@ console.error("Elementos não encontrados para:", tipo);
 return;
 }
 searchInput.addEventListener('input', function(e) {
+selectedMaterial[tipo] = null;
 const query = e.target.value.toLowerCase().trim();
 resultsDiv.innerHTML = '';
 if (query.length < 1) {
@@ -1098,16 +1099,17 @@ btnSubmit.textContent = "🚀 Gerar Relatório";
 });
 const btnCopiar = document.getElementById("btnCopiar");
 if (btnCopiar) {
-btnCopiar.addEventListener("click", function () {
+btnCopiar.addEventListener("click", async function () {
 const texto = textarea.value;
-if (navigator.clipboard) {
-navigator.clipboard.writeText(texto).catch(function () {
-textarea.select();
-document.execCommand("copy");
-});
-} else {
-textarea.select();
-document.execCommand("copy");
+try {
+  if (!navigator.clipboard) throw new Error('fallback');
+  await navigator.clipboard.writeText(texto);
+} catch (_) {
+  textarea.select();
+  if (!document.execCommand("copy")) {
+    btnCopiar.textContent = "Selecione o texto e copie manualmente";
+    return;
+  }
 }
 const original = btnCopiar.textContent;
 btnCopiar.textContent = "✅ Copiado!";

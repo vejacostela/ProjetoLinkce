@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+from validation import validate_report
 
 # Configurar log
 logging.basicConfig(level=logging.INFO)
@@ -17,8 +18,8 @@ app = FastAPI()
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -37,7 +38,7 @@ def get_data_brasil():
 # Montar static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(static_dir):
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
     print("✅ Static files montados")
 else:
     print("⚠️ Pasta 'static' não encontrada - ignorando")
@@ -108,35 +109,11 @@ async def get_materiais():
         "total": len(MATERIAIS_CACHE)
     })
 
-@app.post("/api/materiais/recarregar")
-async def recarregar_materiais():
-    global MATERIAIS_CACHE
-    MATERIAIS_CACHE = carregar_materiais()
-    return JSONResponse(content={
-        "mensagem": f"{len(MATERIAIS_CACHE)} materiais recarregados",
-        "total": len(MATERIAIS_CACHE)
-    })
-
-@app.get("/api/debug/materiais")
-async def debug_materiais():
-    caminho = os.path.join(os.path.dirname(__file__), "materiais.txt")
-    existe = os.path.exists(caminho)
-    conteudo = ""
-    if existe:
-        with open(caminho, "r", encoding="utf-8") as f:
-            conteudo = f.read()
-    return JSONResponse(content={
-        "caminho": caminho,
-        "existe": existe,
-        "conteudo": conteudo[:500] + "..." if len(conteudo) > 500 else conteudo,
-        "materiais_no_cache": len(MATERIAIS_CACHE) if MATERIAIS_CACHE else 0
-    })
-
 @app.post("/gerar_relatorio")
 async def gerar_relatorio(request: Request):
     try:
         body = await request.body()
-        data = json.loads(body)
+        data = validate_report(json.loads(body))
         
         tecnico = data.get("tecnico", "").strip()
         relatorio_texto = data.get("relatorio_texto", "").strip()
@@ -184,6 +161,8 @@ Materiais Recolhidos:
         logger.info(f"✅ Relatório gerado - {tecnico}")
         return JSONResponse(content={"relatorio": relatorio})
 
+    except HTTPException:
+        raise
     except json.JSONDecodeError as e:
         logger.error(f"❌ Erro de JSON: {e}")
         raise HTTPException(status_code=400, detail=f"Formato inválido: {str(e)}")
