@@ -21,7 +21,7 @@ class BankTests(unittest.TestCase):
     def test_redirect_without_tokens(self):
         r=self.client.get('/dashboard?token=do-not-forward',follow_redirects=False)
         self.assertEqual(r.status_code,302)
-        self.assertEqual(r.headers['location'],'https://projeto-linkce.vercel.app/')
+        self.assertEqual(r.headers['location'],'/')
         self.assertEqual(r.headers['cache-control'],'no-store')
     def test_only_gestor_can_manage(self):
         for role in ('tecnico','apoio'):
@@ -54,3 +54,4 @@ class BankTests(unittest.TestCase):
         self.assertIn(('delete',(),{'count':'exact','returning':'minimal'}),bank.calls)
 
 if __name__=='__main__':unittest.main()
+

@@ -1,5 +1,5 @@
-const CACHE = 'linkce-v7';
-const SHELL = ['/', '/static/style.css', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
+const CACHE = 'linkce-unified-v1';
+const SHELL = ['/tecnico', '/static/style.css', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
 
 // ── Instalação: pré-cache do shell ──────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -44,7 +44,7 @@ self.addEventListener('fetch', e => {
   }
 
   // / e /static/* → cache first
-  if (url.pathname === '/' || url.pathname.startsWith('/static/')) {
+  if (url.pathname === '/tecnico' || url.pathname.startsWith('/static/')) {
     e.respondWith(
       caches.match(request).then(hit => hit || fetchECachear(request))
     );
@@ -227,3 +227,4 @@ self.addEventListener('message', e => {
     });
   }
 });
+

@@ -9,7 +9,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import uvicorn
-from validation import validate_report, authenticate, role_of
+if __package__:
+    from .validation import validate_report, authenticate, role_of
+else:
+    from validation import validate_report, authenticate, role_of
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -158,7 +161,7 @@ async def service_worker():
         media_type="application/javascript",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate",
-            "Service-Worker-Allowed": "/",
+            "Service-Worker-Allowed": "/tecnico",
         },
     )
 
@@ -193,7 +196,7 @@ async def account_page():
             "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
         })
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/tecnico", response_class=HTMLResponse)
 async def index():
     try:
         caminho = os.path.join(os.path.dirname(__file__), "index.html")
@@ -204,7 +207,7 @@ async def index():
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard():
-    return RedirectResponse("https://projeto-linkce.vercel.app/", status_code=302,
+    return RedirectResponse("/", status_code=302,
         headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"})
 
 # === API MATERIAIS ===
@@ -576,3 +579,4 @@ async def health_check():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+

@@ -1,45 +1,32 @@
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
-import httpx
 import main
 
-class IntegrationTests(unittest.TestCase):
-    def setUp(self):
-        self.client = TestClient(main.app)
+class UnifiedTests(unittest.TestCase):
+    def setUp(self): self.client=TestClient(main.app)
+    def test_pages_and_assets_share_application(self):
+        for path, text in [('/', 'Atendimentos em campo'),('/tecnico','Gerador de Relatório Técnico'),('/recuperar-senha','Recuperar acesso'),('/nova-senha','passwordForm')]:
+            r=self.client.get(path)
+            self.assertEqual(r.status_code,200,path)
+            self.assertIn(text,r.text)
+        for path in ['/panel-assets/panel.js','/panel-assets/panel.css','/static/auth-ui.js','/static/account.js']:
+            self.assertEqual(self.client.get(path).status_code,200)
+        self.assertEqual(self.client.get('/dashboard',follow_redirects=False).headers['location'],'/')
+    def test_private_routes_require_authentication(self):
+        for method,path in [('get','/api/relatorios'),('get','/api/banco/previa'),('post','/api/criar-usuario'),('post','/gerar_relatorio')]:
+            self.assertEqual(getattr(self.client,method)(path).status_code,401)
+    def test_config_served_locally_without_external_collector(self):
+        with patch.object(main.collector,'SUPABASE_URL','https://test.supabase.co'),patch.object(main.collector,'SUPABASE_KEY','public-test'),patch.object(main.collector,'SUPABASE_SERVICE_KEY','private-test'):
+            r=self.client.get('/api/config')
+        self.assertEqual(r.status_code,200)
+        self.assertEqual(r.json()['supabase_key'],'public-test')
+        self.assertNotIn('private-test',r.text)
+    def test_technical_worker_does_not_cache_management_page(self):
+        r=self.client.get('/sw.js')
+        self.assertEqual(r.status_code,200)
+        self.assertEqual(r.headers['service-worker-allowed'],'/tecnico')
+        self.assertIn("const SHELL = ['/tecnico'",r.text)
+        self.assertNotIn("url.pathname === '/'",r.text)
 
-    def test_no_token_never_reaches_upstream(self):
-        with patch.object(main.httpx, 'AsyncClient') as upstream:
-            for method, path in [('get','/api/relatorios'), ('post','/api/criar-usuario')]:
-                response = getattr(self.client, method)(path)
-                self.assertEqual(response.status_code, 401)
-                self.assertEqual(response.headers['cache-control'], 'no-store')
-            upstream.assert_not_called()
-
-    def test_forward_preserves_authorization_and_denial(self):
-        actual = httpx.AsyncClient
-        seen = []
-        def handler(request):
-            seen.append(request)
-            return httpx.Response(403,json={'detail':'Acesso não autorizado.'})
-        with patch.object(main.httpx, 'AsyncClient', side_effect=lambda **kw: actual(transport=httpx.MockTransport(handler),**kw)):
-            response = self.client.get('/api/relatorios?limite=50&offset=50',headers={'Authorization':'Bearer test-token'})
-            self.assertEqual(response.status_code,403)
-            self.assertEqual(seen[0].headers['authorization'],'Bearer test-token')
-            self.assertEqual(seen[0].url.params['offset'],'50')
-            self.assertEqual(str(seen[0].url).split('/api/')[0], main.COLLECTOR)
-
-    def test_upstream_failure_is_not_empty_success_or_secret(self):
-        actual = httpx.AsyncClient
-        with patch.object(main.httpx, 'AsyncClient', side_effect=lambda **kw: actual(transport=httpx.MockTransport(lambda r:httpx.Response(500,json={'detail':'private-database-error'})),**kw)):
-            response=self.client.get('/api/relatorios',headers={'Authorization':'Bearer test'})
-            self.assertEqual(response.status_code,503)
-            self.assertNotIn('private-database-error',response.text)
-
-    def test_no_arbitrary_proxy_or_legacy_write(self):
-        self.assertEqual(self.client.get('/api/banco/stats').status_code,404)
-        self.assertEqual(self.client.post('/gerar_relatorio',json={}).status_code,404)
-        self.assertEqual(self.client.get('/api/relatorios/not-a-uuid').status_code,422)
-        self.assertEqual(self.client.get('/').status_code,200)
-
-if __name__ == '__main__': unittest.main()
+if __name__=='__main__':unittest.main()

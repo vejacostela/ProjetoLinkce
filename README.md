@@ -1,43 +1,37 @@
-# ProjetoLinkce
+# Linkce — sistema único
 
-Repositório unificado da gestão e da captura de relatórios Linkce.
+Painel, formulário dos técnicos e API são executados no mesmo aplicativo FastAPI, pelo projeto **projeto-linkce** da Vercel. O projeto Vercel relatorio-linkce não é mais necessário.
 
-| Aplicativo | Pasta | Projeto Vercel | Endereço |
-| --- | --- | --- | --- |
-| Painel de gestão | raiz deste repositório | projeto-linkce | https://projeto-linkce.vercel.app/ |
-| Captura e API | Relatorio-Linkce/ | relatorio-linkce | https://relatorio-linkce.vercel.app/ |
+| Função | Endereço |
+| --- | --- |
+| Painel | https://projeto-linkce.vercel.app/ |
+| Formulário técnico | https://projeto-linkce.vercel.app/tecnico |
+| Recuperar senha | https://projeto-linkce.vercel.app/recuperar-senha |
+| Nova senha pelo link de email | https://projeto-linkce.vercel.app/nova-senha |
 
-O painel consulta a API autenticada do coletor. O Supabase continua sendo o banco; não há migração de dados nesta reorganização. As duas aplicações e seus domínios permanecem separados, mas o código passa a ser mantido neste único repositório.
+## Configuração na Vercel
 
-## Concluir a conexão na Vercel
+Usar apenas o projeto **projeto-linkce**, repositório **vejacostela/ProjetoLinkce**, branch **main**, Root Directory na raiz (vazio / padrão). A pasta Relatorio-Linkce contém o módulo de captura e API, importado pelo main.py da raiz; não é um segundo deploy.
 
-A cópia do código não altera automaticamente a origem Git do projeto Vercel existente.
+No ambiente Production desse projeto, configurar **SUPABASE_URL**, **SUPABASE_KEY** (anon/publishable) e **SUPABASE_SERVICE_KEY** (somente servidor), todas do Supabase que já contém os usuários e relatórios. As variáveis do projeto Vercel desativado não são transferidas automaticamente. Depois de alterá-las, fazer Redeploy.
 
-No projeto **relatorio-linkce** da Vercel:
+RELATORIO_API_URL deixou de ser utilizada. Não há chamadas à aplicação desativada. Se havia integração WhatsApp, manter WHATSAPP_SERVICE_URL e WHATSAPP_SECRET no projeto único; sem essas variáveis, notificações permanecem inativas.
 
-1. Em Settings / Git, trocar o repositório conectado para **vejacostela/ProjetoLinkce**.
-2. Em Settings / Build and Deployment, definir **Root Directory** como **Relatorio-Linkce** (respeitar maiúsculas).
-3. Manter a branch de produção **main**, os domínios e as variáveis existentes, incluindo SUPABASE_URL, SUPABASE_KEY e SUPABASE_SERVICE_KEY. Não publicar valores de chaves no GitHub.
-4. Publicar a branch main do repositório unificado depois de salvar a configuração. O vercel.json e requirements.txt da subpasta são os usados pelo coletor.
-5. Verificar login, envio de relatório, localização e consulta no painel.
+No Supabase, configurar Site URL como https://projeto-linkce.vercel.app e permitir Redirect URL https://projeto-linkce.vercel.app/nova-senha. Manter o provedor Email ativo. Nenhuma migração de banco é necessária: a tabela relatorios e os usuários existentes são reutilizados.
 
-O projeto **projeto-linkce** da Vercel permanece conectado a este repositório com Root Directory na raiz (vazio / padrão).
+## Sessão e perfis
 
-Até concluir a troca na Vercel, a produção do coletor ainda vem do repositório antigo. Não remover o projeto Vercel relatorio-linkce nem seu domínio. Não arquivar o repositório antigo antes de validar a troca. Após a troca, fazer as próximas alterações do coletor em Relatorio-Linkce/ neste repositório, evitando divergência entre as cópias.
+Painel, captura e recuperação compartilham a sessão no mesmo domínio. Técnico que entra no painel é direcionado a /tecnico; gestor e apoio consultam o painel e também podem abrir a área técnica. As permissões de cada operação são verificadas na API com a identidade do Supabase.
 
-## Referência da importação
+O cache offline é limitado à área /tecnico. O painel e as APIs privadas não são armazenados por esse cache. Rascunhos offline do domínio antigo não migram automaticamente para o domínio novo.
 
-Código do coletor importado de vejacostela/Relatorio-Linkce, commit 51a92b5ba800626024a282f0d7edb247c32cfbeb. Os arquivos importados preservam seu conteúdo, incluindo PNGs, testes e migrações. O arquivo legado database.db não foi copiado; a aplicação usa Supabase e não lê esse SQLite. O histórico anterior permanece no repositório de origem.
+## Código e testes
 
-## Desenvolvimento e testes
+main.py na raiz carrega Relatorio-Linkce/main.py como módulo e publica o painel. Assets do painel usam /panel-assets; captura usa /static. Somente o vercel.json e requirements.txt da raiz definem o deploy.
 
-Executar cada aplicativo a partir de sua própria pasta, em ambientes separados para evitar conflito entre módulos main.py e dependências.
+Na raiz: instalar requirements.txt e executar `python -m unittest -v test_integration`.
+Dentro de Relatorio-Linkce: `python -m unittest -v test_security test_accounts test_report_listing test_bank_retirement`.
 
-- Painel: instalar requirements.txt e executar python -m unittest -v test_integration na raiz.
-- Coletor: dentro de Relatorio-Linkce/, instalar requirements.txt e httpx==0.27.2; executar python -m unittest -v test_security test_accounts test_report_listing test_bank_retirement.
+Os testes usam banco e identidade simulados. Validar acesso, geração, gravação, localização, consulta e recuperação por email no ambiente configurado. Não executar exclusões reais como teste.
 
-A configuração de publicação em subpasta não requer mudar as rotas HTTP: /gerar_relatorio, /api/* e /static/* continuam relativas ao domínio do coletor.
-
-Leia [INTEGRATION.md](INTEGRATION.md), [configuração de acesso](Relatorio-Linkce/AUTH_SETUP.md) e [implantação do coletor](Relatorio-Linkce/DEPLOYMENT.md).
-
-Referência Vercel: https://vercel.com/docs/monorepos
+Código do coletor originalmente importado do commit 51a92b5ba800626024a282f0d7edb247c32cfbeb de vejacostela/Relatorio-Linkce. Novas alterações devem ocorrer neste repositório unificado.

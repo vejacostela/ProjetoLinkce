@@ -1,3 +1,5 @@
+# Sistema único: configure estas opções no projeto Vercel projeto-linkce, usando a raiz do repositório. Veja também ../README.md.
+
 # Login, usuários e recuperação de senha
 
 As alterações são publicadas pelo GitHub/Vercel. Não é necessário executar Python no computador do usuário.
@@ -5,7 +7,7 @@ As alterações são publicadas pelo GitHub/Vercel. Não é necessário executar
 ## Configuração antes de publicar
 
 1. Na Vercel, configure `SUPABASE_URL`, `SUPABASE_KEY` (anon ou publishable) e `SUPABASE_SERVICE_KEY` (segredo exclusivo do servidor). Nunca coloque a chave de serviço no HTML, GitHub ou em SUPABASE_KEY.
-2. No Supabase, em Authentication / URL Configuration, configure a Site URL como `https://relatorio-linkce.vercel.app` e adicione às Redirect URLs `https://relatorio-linkce.vercel.app/nova-senha`. Para outro domínio, autorize a URL equivalente nesse domínio. A aplicação usa o domínio em que está aberta.
+2. No Supabase, em Authentication / URL Configuration, configure a Site URL como `https://projeto-linkce.vercel.app` e adicione às Redirect URLs `https://projeto-linkce.vercel.app/nova-senha`. Para outro domínio, autorize a URL equivalente nesse domínio. A aplicação usa o domínio em que está aberta.
 3. Mantenha no modelo de email de recuperação o link padrão `{{ .ConfirmationURL }}`. Verifique a configuração de envio de emails do projeto e teste a entrega com uma conta de homologação.
 4. Conclua a migração e configuração de cargos descritas em DEPLOYMENT.md. O primeiro gestor precisa ter `app_metadata.role = gestor`, atribuído pela administração do Supabase. Entre novamente depois de alterar o cargo.
 5. Valide em homologação antes de integrar o PR e publicar na Vercel.
@@ -25,3 +27,4 @@ As alterações são publicadas pelo GitHub/Vercel. Não é necessário executar
 Os testes usam identidades e serviços simulados. Não enviam emails nem alteram usuários reais. A entrega do email, a abertura do link e o login com a senha alterada precisam ser validados no projeto Supabase configurado.
 
 Referências: https://supabase.com/docs/reference/javascript/auth-resetpasswordforemail e https://supabase.com/docs/reference/javascript/auth-updateuser
+

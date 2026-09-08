@@ -102,6 +102,7 @@ async function loadReports() {
 }
 async function enter(user) {
   const role = user.app_metadata?.role;
+  if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
   currentUser = user; $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('newUser').hidden = role !== 'gestor';
@@ -213,3 +214,4 @@ $('bankDeleteForm').addEventListener('submit',async event=>{
   } catch(error) {if(userId===currentUser?.id)$('bankStatus').textContent=error.message+' Calcule uma nova prévia antes de repetir.';}
   finally {deletingBank=false;$('deleteBank').disabled=false;$('previewBank').disabled=false;$('keepDays').disabled=false;}
 });
+

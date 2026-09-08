@@ -955,7 +955,7 @@ async function initAuth() {
       return;
     }
     const { createClient } = supabase;
-    sbClient = createClient(cfg.supabase_url, cfg.supabase_key);
+    sbClient = createClient(cfg.supabase_url, cfg.supabase_key, { auth: { storageKey: 'linkce-management-auth' } });
 
     // getSession pode falhar offline se o token expirou e o SDK tenta renovar via rede
     let session = null;
@@ -1014,7 +1014,7 @@ function mostrarApp(user) {
   document.getElementById('userNome').textContent = '👤 ' + nome;
   document.getElementById('userBadge').textContent =
     role === 'gestor' ? '⚙️ Gestor' : role === 'apoio' ? '🛠️ Apoio' : '🔧 Técnico';
-  if (role === 'gestor') { window.location.href = '/dashboard'; return; }
+  // All authorized profiles may fill reports in the technical area.
   carregarMateriais();
   restaurarRascunho();
 }
@@ -1555,7 +1555,7 @@ window.addEventListener('online',  atualizarBannerOffline);
 window.addEventListener('offline', atualizarBannerOffline);
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
+  navigator.serviceWorker.register('/sw.js', { scope: '/tecnico' })
     .then(reg => {
       console.log('✅ Service Worker registrado, scope:', reg.scope);
       // Força sync se há pendentes ao voltar online
@@ -1596,3 +1596,4 @@ initAuth();
 </script>
 </body>
 </html>
+

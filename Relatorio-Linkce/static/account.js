@@ -14,7 +14,7 @@
     const config = await response.json();
     if (!config.supabase_url || !config.supabase_key) throw new Error('config');
     client = supabase.createClient(config.supabase_url, config.supabase_key, {
-      auth: { flowType: 'implicit', detectSessionInUrl: true }
+      auth: { storageKey: 'linkce-management-auth', flowType: 'implicit', detectSessionInUrl: true }
     });
     // Subscribe before initialization finishes; don't await SDK calls inside the callback.
     client.auth.onAuthStateChange((event, session) => {
@@ -104,3 +104,4 @@
     }
   });
 })();
+
