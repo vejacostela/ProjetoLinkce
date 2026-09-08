@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Dashboard - Relatórios Técnicos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/static/auth-ui.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --primary-orange: #FF6B35;
+  --primary-green:  #06D6A0;
+  --primary-blue:   #118AB2;
+  --dark-bg:        #0a0e27;
+  --card-bg:        rgba(255,255,255,0.05);
+  --text-primary:   #ffffff;
+  --text-secondary: #a0aec0;
+  --border:         rgba(255,255,255,0.1);
+}
+body {
+  font-family: 'Inter', sans-serif;
+  background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 50%, #0d1328 100%);
+  min-height: 100vh; color: var(--text-primary); overflow-x: hidden;
+}
+
+/* HEADER */
+.header {
+  background: rgba(10,14,39,0.95); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 1000;
+}
+.header-title { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #fff, var(--primary-blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.header-user  { display: flex; align-items: center; gap: 12px; }
+.header-nome  { font-size: 14px; color: var(--text-secondary); }
+.btn-logout   { background: rgba(255,107,53,0.12); border: 1px solid rgba(255,107,53,0.4); color: var(--primary-orange); padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter',sans-serif; transition: all 0.2s; }
+.btn-logout:hover { background: rgba(255,107,53,0.25); }
+.btn-form { background: rgba(6,214,160,0.12); border: 1px solid rgba(6,214,160,0.4); color: var(--primary-green); padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: 'Inter',sans-serif; transition: all 0.2s; text-decoration: none; display: inline-block; }
+
+/* GRID PRINCIPAL */
+.main-grid { display: grid; grid-template-columns: 1fr 380px; gap: 0; height: calc(100vh - 57px); }
+
+/* MAPA */
+#map { width: 100%; height: 100%; z-index: 1; }
+
+/* PAINEL LATERAL */
+.sidebar { background: rgba(10,14,39,0.95); border-left: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; }
+.sidebar-section { padding: 20px; border-bottom: 1px solid var(--border); }
+.sidebar-title { font-size: 13px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 14px; }
+
+/* CARDS DE TÉCNICOS */
+.tec-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+.tec-card:hover { border-color: var(--primary-blue); background: rgba(17,138,178,0.08); }
+.tec-card.ativo { border-color: var(--primary-green); background: rgba(6,214,160,0.08); }
+.tec-nome { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.tec-info { font-size: 12px; color: var(--text-secondary); }
+.tec-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
+.badge-online { background: rgba(6,214,160,0.2); color: var(--primary-green); border: 1px solid rgba(6,214,160,0.3); }
+.badge-offline { background: rgba(160,174,192,0.15); color: var(--text-secondary); border: 1px solid rgba(160,174,192,0.2); }
+
+/* LISTA DE RELATÓRIOS */
+.relatorio-item { padding: 10px 0; border-bottom: 1px solid var(--border); cursor: pointer; display:flex; align-items:flex-start; gap:10px; }
+.relatorio-item:hover .rel-tecnico { color: var(--primary-blue); }
+.relatorio-item:last-child { border-bottom: none; }
+.rel-dot { width:8px;height:8px;border-radius:50%;background:var(--primary-blue);margin-top:4px;flex-shrink:0; }
+.rel-tecnico { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.rel-data    { font-size: 11px; color: var(--text-secondary); }
+.rel-loc     { font-size: 11px; color: var(--primary-orange); margin-top: 2px; }
+
+/* MODAL TÉCNICO */
+.modal-tec-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;z-index:8000;padding:0; }
+@media(min-width:600px){ .modal-tec-overlay { align-items:center; padding:20px; } }
+.modal-tec-card { background:#0f1535;border:1px solid rgba(255,255,255,0.12);border-radius:20px 20px 0 0;width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 -8px 40px rgba(0,0,0,0.5); }
+@media(min-width:600px){ .modal-tec-card { border-radius:20px;max-height:80vh; } }
+.modal-tec-header { padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;flex-shrink:0; }
+.modal-tec-nome { font-size:18px;font-weight:700; }
+.modal-tec-sub { font-size:12px;color:var(--text-secondary);margin-top:2px; }
+.modal-tec-close { background:rgba(255,255,255,0.08);border:none;color:var(--text-secondary);width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center; }
+.modal-tec-close:hover { background:rgba(255,107,53,0.2);color:#FF6B35; }
+.modal-tec-body { overflow-y:auto;flex:1;padding:16px 24px; }
+.modal-rel-item { padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.06);display:flex;gap:14px;align-items:flex-start; }
+.modal-rel-item:last-child { border-bottom:none; }
+.modal-rel-num { font-size:11px;font-weight:700;color:var(--primary-blue);min-width:24px;margin-top:1px; }
+.modal-rel-nome { font-weight:600;font-size:13px;margin-bottom:3px; }
+.modal-rel-data { font-size:12px;color:var(--text-secondary); }
+.modal-rel-loc { font-size:11px;color:var(--primary-orange);margin-top:3px; }
+.modal-empty { color:var(--text-secondary);font-size:13px;padding:24px 0;text-align:center; }
+
+/* STATS */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.stat-card  { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+.stat-num   { font-size: 28px; font-weight: 700; background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow, #FFD23F)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.stat-label { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+/* FILTRO */
+.filtro-input { width: 100%; padding: 10px 14px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text-primary); font-family: 'Inter',sans-serif; font-size: 13px; outline: none; }
+.filtro-input:focus { border-color: var(--primary-blue); }
+.filtro-input::placeholder { color: var(--text-secondary); }
+
+/* LOGIN */
+.login-overlay { position: fixed; top:0;left:0;width:100%;height:100%; background: linear-gradient(135deg,#0a0e27,#1a1f3a); display:flex;align-items:center;justify-content:center; z-index:9999; }
+.login-card { background:var(--card-bg);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:24px;padding:48px 40px;width:100%;max-width:400px; }
+.login-error { background:rgba(255,107,53,0.15);border:1px solid var(--primary-orange);color:var(--primary-orange);padding:12px;border-radius:10px;margin-bottom:16px;display:none;font-size:13px; }
+.login-label { display:block;font-weight:600;font-size:13px;text-transform:uppercase;margin-bottom:8px; }
+.login-input { width:100%;padding:13px 16px;background:rgba(255,255,255,0.05);border:2px solid var(--border);border-radius:12px;color:var(--text-primary);font-family:'Inter',sans-serif;font-size:14px;outline:none;margin-bottom:16px; }
+.login-input:focus { border-color:var(--primary-blue); }
+.btn-entrar { width:100%;padding:16px;background:linear-gradient(135deg,var(--primary-orange),#FFD23F);border:none;border-radius:12px;color:#0a0e27;font-weight:700;font-size:15px;cursor:pointer;font-family:'Inter',sans-serif; }
+
+/* RESPONSIVO */
+@media(max-width:768px) {
+  .main-grid { grid-template-columns:1fr; grid-template-rows:50vh 1fr; }
+  .sidebar { height:auto; }
+}
+
+/* LEAFLET CUSTOM */
+.leaflet-popup-content-wrapper { background:#1a1f3a;border:1px solid rgba(255,255,255,0.15);border-radius:12px;color:#fff;box-shadow:0 8px 32px rgba(0,0,0,0.4); }
+.leaflet-popup-tip { background:#1a1f3a; }
+.popup-nome { font-weight:700;font-size:14px;margin-bottom:6px;color:#06D6A0; }
+.popup-info { font-size:12px;color:#a0aec0;line-height:1.6; }
+
+/* BOTÃO CRIAR USUÁRIO */
+.btn-criar { background:rgba(17,138,178,0.15);border:1px solid rgba(17,138,178,0.4);color:#118AB2;padding:6px 16px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.2s; }
+.btn-criar:hover { background:rgba(17,138,178,0.28); }
+
+/* MODAL */
+.modal-overlay { position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.65);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9000;padding:20px; }
+.modal-card { background:#0f1535;border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:36px 32px;width:100%;max-width:420px;box-shadow:0 24px 60px rgba(0,0,0,0.5); }
+.modal-title { font-size:18px;font-weight:700;margin-bottom:4px; }
+.modal-sub { font-size:13px;color:var(--text-secondary);margin-bottom:24px; }
+.modal-label { display:block;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px; }
+.modal-input { width:100%;padding:12px 14px;background:rgba(255,255,255,0.05);border:1.5px solid var(--border);border-radius:10px;color:var(--text-primary);font-family:'Inter',sans-serif;font-size:14px;outline:none;margin-bottom:16px; }
+.modal-input:focus { border-color:#118AB2; }
+.modal-input::placeholder { color:#4a5568; }
+.cargo-group { display:flex;gap:10px;margin-bottom:20px; }
+.cargo-opt { flex:1;padding:10px 6px;border:1.5px solid var(--border);border-radius:10px;text-align:center;cursor:pointer;font-size:12px;font-weight:600;transition:all 0.2s;color:var(--text-secondary); }
+.cargo-opt:hover { border-color:#118AB2;color:#fff; }
+.cargo-opt.ativo { border-color:#06D6A0;background:rgba(6,214,160,0.12);color:#06D6A0; }
+.modal-footer { display:flex;gap:10px;margin-top:4px; }
+.btn-modal-cancel { flex:1;padding:12px;background:transparent;border:1.5px solid var(--border);border-radius:10px;color:var(--text-secondary);font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all 0.2s; }
+.btn-modal-cancel:hover { border-color:#FF6B35;color:#FF6B35; }
+.btn-modal-ok { flex:2;padding:12px;background:linear-gradient(135deg,#118AB2,#06D6A0);border:none;border-radius:10px;color:#0a0e27;font-family:'Inter',sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:opacity 0.2s; }
+.btn-modal-ok:disabled { opacity:0.5;cursor:not-allowed; }
+.modal-msg { font-size:13px;text-align:center;margin-top:12px;min-height:20px; }
+.modal-msg.ok  { color:#06D6A0; }
+.modal-msg.err { color:#FF6B35; }
+
+/* LISTA DE TÉCNICOS NO MODAL */
+.tec-list-item { padding:13px 4px; border-bottom:1px solid rgba(255,255,255,0.06); cursor:pointer; display:flex; align-items:center; justify-content:space-between; border-radius:8px; transition:background 0.15s; }
+.tec-list-item:hover { background:rgba(17,138,178,0.08); padding-left:8px; }
+.tec-list-item:last-child { border-bottom:none; }
+.tec-list-nome { font-weight:600; font-size:14px; }
+.tec-list-info { font-size:12px; color:var(--text-secondary); margin-top:2px; }
+.tec-list-arrow { color:var(--text-secondary); font-size:18px; flex-shrink:0; }
+
+/* GRUPOS POR DIA */
+.dia-grupo { margin-bottom:6px; }
+.dia-header { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; background:rgba(255,255,255,0.04); border-radius:10px; border:1px solid rgba(255,255,255,0.07); transition:background 0.15s; }
+.dia-header.clicavel { cursor:pointer; }
+.dia-header.clicavel:hover { background:rgba(17,138,178,0.09); }
+.dia-header.aberto { background:rgba(6,214,160,0.07); border-color:rgba(6,214,160,0.22); }
+.dia-esq { display:flex; flex-direction:column; gap:4px; }
+.dia-titulo { font-size:13px; font-weight:600; }
+.dia-info { font-size:11px; color:var(--text-secondary); }
+.dia-dir { display:flex; align-items:center; gap:8px; }
+.dia-badge { background:rgba(17,138,178,0.2); color:#118AB2; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+.dia-arrow { color:var(--text-secondary); font-size:13px; transition:transform 0.2s; display:inline-block; }
+.dia-header.aberto .dia-arrow { transform:rotate(90deg); }
+.dia-sublist { padding:6px 0 2px 10px; border-left:2px solid rgba(6,214,160,0.2); margin-left:10px; margin-top:4px; }
+.rel-mini-item { padding:8px 10px; border-radius:8px; display:flex; align-items:flex-start; gap:10px; margin-bottom:2px; transition:background 0.15s; }
+.rel-mini-item.clicavel { cursor:pointer; }
+.rel-mini-item.clicavel:hover { background:rgba(255,255,255,0.05); }
+.rel-mini-hora { font-size:12px; color:var(--primary-blue); font-weight:700; min-width:44px; margin-top:1px; flex-shrink:0; }
+.rel-mini-detalhe { font-size:12px; }
+.rel-mini-status { font-weight:500; }
+.rel-mini-sinal { color:var(--text-secondary); margin-top:2px; font-size:11px; }
+.btn-voltar { background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.12); color:var(--text-secondary); padding:5px 12px; border-radius:14px; cursor:pointer; font-size:12px; font-weight:600; font-family:'Inter',sans-serif; transition:all 0.15s; white-space:nowrap; }
+.btn-voltar:hover { background:rgba(255,255,255,0.14); color:#fff; }
+
+/* BOTÃO MAPA NOS CARDS */
+.btn-mapa { background:none; border:none; cursor:pointer; font-size:18px; line-height:1; padding:2px 4px; transition:transform 0.15s; flex-shrink:0; }
+.btn-mapa:hover { transform:scale(1.25); }
+
+/* MODAL RELATÓRIO COMPLETO */
+.rel-completo-pre { font-family:'Courier New',Courier,monospace; font-size:12px; line-height:1.7; padding:0 24px 24px; white-space:pre-wrap; word-break:break-word; color:var(--text-primary); flex:1; overflow-y:auto; min-height:0; }
+.btn-copiar { width:100%; padding:10px 16px; background:rgba(6,214,160,0.1); border:1px solid rgba(6,214,160,0.3); border-radius:10px; color:var(--primary-green); font-size:13px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; }
+.btn-copiar:hover { background:rgba(6,214,160,0.2); }
+.btn-copiar.copiado { background:rgba(6,214,160,0.25); border-color:rgba(6,214,160,0.6); }
+
+/* BANCO — MODAL DE GERENCIAMENTO */
+.btn-banco { background:rgba(255,210,63,0.12); border:1px solid rgba(255,210,63,0.4); color:#FFD23F; padding:6px 16px; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; transition:all 0.2s; }
+.btn-banco:hover { background:rgba(255,210,63,0.25); }
+.banco-tab { flex:1; padding:9px 12px; border:none; border-radius:8px; background:transparent; color:var(--text-secondary); cursor:pointer; font-family:'Inter',sans-serif; font-size:13px; font-weight:600; transition:all 0.2s; }
+.banco-tab.ativo { background:rgba(17,138,178,0.2); color:#118AB2; }
+.banco-usage-bar { height:8px; background:rgba(255,255,255,0.08); border-radius:8px; overflow:hidden; }
+.banco-usage-fill { height:100%; border-radius:8px; transition:width 0.6s ease; }
+.calendario-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:3px; margin-bottom:10px; }
+.cal-header { text-align:center; font-size:10px; font-weight:700; color:var(--text-secondary); text-transform:uppercase; padding:5px 2px; }
+.cal-dia { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; border-radius:7px; font-size:12px; font-weight:600; transition:all 0.15s; border:1px solid transparent; }
+.cal-dia.vazio { color:rgba(255,255,255,0.12); }
+.cal-dia.tem-dados { background:rgba(17,138,178,0.15); border-color:rgba(17,138,178,0.3); cursor:pointer; color:#fff; }
+.cal-dia.tem-dados:hover { background:rgba(17,138,178,0.28); border-color:rgba(17,138,178,0.5); }
+.cal-dia.selecionado { background:rgba(255,107,53,0.22)!important; border-color:rgba(255,107,53,0.6)!important; color:var(--primary-orange)!important; }
+.cal-count { font-size:9px; color:var(--primary-blue); line-height:1; margin-top:1px; }
+.cal-dia.selecionado .cal-count { color:var(--primary-orange); }
+.btn-deletar { width:100%; padding:12px; background:rgba(255,107,53,0.1); border:1.5px solid rgba(255,107,53,0.3); color:var(--primary-orange); border-radius:10px; cursor:pointer; font-family:'Inter',sans-serif; font-size:14px; font-weight:600; transition:all 0.2s; }
+.btn-deletar:hover:not(:disabled) { background:rgba(255,107,53,0.22); border-color:var(--primary-orange); }
+.btn-deletar:disabled { opacity:0.35; cursor:not-allowed; }
+.toggle-wrap { width:46px; height:24px; border-radius:12px; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); cursor:pointer; position:relative; transition:all 0.25s; flex-shrink:0; }
+.toggle-wrap.ativo { background:rgba(6,214,160,0.25); border-color:rgba(6,214,160,0.5); }
+.toggle-knob { position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:rgba(255,255,255,0.35); transition:all 0.25s; }
+.toggle-wrap.ativo .toggle-knob { left:25px; background:var(--primary-green); }
+.dias-opcoes { display:flex; gap:6px; flex-wrap:wrap; }
+.dia-opt { padding:7px 14px; border:1.5px solid var(--border); border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; color:var(--text-secondary); transition:all 0.15s; background:transparent; font-family:'Inter',sans-serif; }
+.dia-opt:hover { border-color:#118AB2; color:#fff; }
+.dia-opt.ativo { border-color:#06D6A0; background:rgba(6,214,160,0.12); color:#06D6A0; }
+.banco-info-row { display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:rgba(255,255,255,0.04); border-radius:10px; margin-bottom:12px; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN OVERLAY -->
+<div id="loginOverlay" class="login-overlay">
+<div class="login-card">
+<h1 style="font-size:22px;font-weight:700;margin-bottom:6px;background:linear-gradient(135deg,#fff,#118AB2);-webkit-background-clip:text;-webkit-text-fill-color:transparent">⚙️ Dashboard</h1>
+<p style="color:#a0aec0;font-size:14px;margin-bottom:28px">Acesso exclusivo para gestores</p>
+<div id="loginErroDash" class="login-error"></div>
+<label class="login-label">Email</label>
+<input type="email" id="dashEmail" class="login-input" placeholder="seu@email.com">
+<label class="login-label">Senha</label>
+<input type="password" id="dashSenha" class="login-input" placeholder="••••••••">
+<button id="btnEntrar" class="btn-entrar">🔐 Entrar</button>
+<a href="/recuperar-senha" style="display:block;margin-top:18px;color:#72dcff;text-align:center">Esqueci minha senha</a>
+</div>
+</div>
+
+<!-- HEADER -->
+<div class="header" id="mainHeader" style="display:none">
+<span class="header-title">📡 Dashboard Técnico — Linkce</span>
+<div class="header-user">
+<span class="header-nome" id="gestorNome"></span>
+<button id="btnAbrirModal" class="btn-criar">➕ Criar Usuário</button>
+<button id="btnAbrirListaTec" class="btn-form">📋 Relatórios</button>
+<button id="btnBanco" class="btn-banco" style="display:none">🗄️ Banco</button>
+<button id="btnSair" class="btn-logout">Sair</button>
+</div>
+</div>
+
+<!-- MODAL CRIAR USUÁRIO -->
+<div id="modalUsuario" class="modal-overlay" style="display:none">
+<div class="modal-card">
+  <div class="modal-title">➕ Criar Usuário</div>
+  <div class="modal-sub">O acesso será criado direto no Supabase Auth</div>
+  <label class="modal-label">Nome completo</label>
+  <input type="text" id="novoNome" class="modal-input" placeholder="Ex: João Silva">
+  <label class="modal-label">Email</label>
+  <input type="email" id="novoEmail" class="modal-input" placeholder="joao@linkce.com.br">
+  <label class="modal-label">Senha</label>
+  <input type="password" id="novaSenha" class="modal-input" placeholder="12 a 128 caracteres" minlength="12" maxlength="128" autocomplete="new-password">
+  <label class="modal-label">Cargo</label>
+  <div class="cargo-group">
+    <div class="cargo-opt ativo" data-cargo="tecnico">🔧<br>Técnico</div>
+    <div class="cargo-opt" data-cargo="apoio">🛠️<br>Apoio</div>
+    <div class="cargo-opt" data-cargo="gestor">⚙️<br>Gestor</div>
+  </div>
+  <div class="modal-footer">
+    <button class="btn-modal-cancel" id="btnFecharModal">Cancelar</button>
+    <button class="btn-modal-ok" id="btnCriarUsuario">Criar acesso</button>
+  </div>
+  <div class="modal-msg" id="modalMsg"></div>
+</div>
+</div>
+
+<!-- MODAL TÉCNICO — RELATÓRIOS DA SEMANA -->
+<div id="modalTecnico" class="modal-tec-overlay" style="display:none">
+  <div class="modal-tec-card">
+    <div class="modal-tec-header">
+      <div>
+        <div class="modal-tec-nome" id="modalTecNome">👷 Técnico</div>
+        <div class="modal-tec-sub" id="modalTecSub">Relatórios dos últimos 7 dias</div>
+      </div>
+      <button class="modal-tec-close" id="btnFecharModalTec">✕</button>
+    </div>
+    <div class="modal-tec-body" id="modalTecBody">
+      <div class="modal-empty">Carregando...</div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL RELATÓRIOS POR TÉCNICO / DIA -->
+<div id="modalRelDia" class="modal-tec-overlay" style="display:none">
+  <div class="modal-tec-card">
+    <div class="modal-tec-header">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+        <button id="btnVoltarLista" class="btn-voltar" style="display:none">← Voltar</button>
+        <div style="min-width:0;overflow:hidden">
+          <div class="modal-tec-nome" id="relDiaNome">👷 Técnicos</div>
+          <div class="modal-tec-sub" id="relDiaSub">Selecione um técnico</div>
+        </div>
+      </div>
+      <button class="modal-tec-close" id="btnFecharRelDia">✕</button>
+    </div>
+    <div class="modal-tec-body" id="relDiaBody"></div>
+  </div>
+</div>
+
+<!-- MODAL RELATÓRIO COMPLETO -->
+<div id="modalRelCompleto" class="modal-tec-overlay" style="display:none">
+  <div class="modal-tec-card">
+    <div class="modal-tec-header">
+      <div style="min-width:0;overflow:hidden">
+        <div class="modal-tec-nome">📋 Relatório Completo</div>
+        <div class="modal-tec-sub" id="relCompletoSub"></div>
+      </div>
+      <button class="modal-tec-close" id="btnFecharRelCompleto">✕</button>
+    </div>
+    <div class="modal-tec-body" style="padding:0;display:flex;flex-direction:column">
+      <div style="padding:14px 24px 10px;flex-shrink:0">
+        <button id="btnCopiarRel" class="btn-copiar">📋 Copiar relatório</button>
+      </div>
+      <pre id="relCompletoTexto" class="rel-completo-pre"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL BANCO -->
+<div id="modalBanco" class="modal-tec-overlay" style="display:none">
+  <div class="modal-tec-card" style="max-width:560px">
+    <div class="modal-tec-header">
+      <div>
+        <div class="modal-tec-nome">🗄️ Banco de Dados</div>
+        <div class="modal-tec-sub" id="bancoSub">Carregando...</div>
+      </div>
+      <button class="modal-tec-close" id="btnFecharBanco">✕</button>
+    </div>
+    <div class="modal-tec-body" style="padding:20px">
+
+      <!-- Barra de uso -->
+      <div style="margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="font-size:13px;font-weight:600" id="bancoUsageLabel">Calculando...</span>
+          <span style="font-size:12px;font-weight:700;color:var(--primary-orange)" id="bancoPct"></span>
+        </div>
+        <div class="banco-usage-bar"><div class="banco-usage-fill" id="bancoUsageFill" style="width:0%"></div></div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:8px;text-align:center" id="bancoInfoRow"></div>
+      </div>
+
+      <!-- Seletor de aba -->
+      <div style="display:flex;gap:4px;margin-bottom:16px;background:rgba(255,255,255,0.04);border-radius:12px;padding:4px">
+        <button class="banco-tab ativo" id="tabManual">📅 Manual</button>
+        <button class="banco-tab" id="tabAuto">⚙️ Automático</button>
+      </div>
+
+      <!-- Painel Manual -->
+      <div id="panelManual">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <button class="btn-voltar" id="btnMesAnt">‹</button>
+          <span id="mesLabel" style="font-size:14px;font-weight:600">--</span>
+          <button class="btn-voltar" id="btnMesPro">›</button>
+        </div>
+        <div class="calendario-grid" id="calGrid"></div>
+        <div id="selInfo" style="text-align:center;font-size:12px;color:var(--text-secondary);min-height:18px;margin:8px 0">Clique nos dias azuis para selecionar</div>
+        <button id="btnDeletar" class="btn-deletar" disabled>🗑️ Deletar selecionados</button>
+      </div>
+
+      <!-- Painel Auto -->
+      <div id="panelAuto" style="display:none">
+        <div class="banco-info-row">
+          <div>
+            <div style="font-weight:600;font-size:14px">Auto-limpeza</div>
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:3px" id="autoStatusLabel">Inativa</div>
+          </div>
+          <div class="toggle-wrap" id="toggleAuto"><div class="toggle-knob"></div></div>
+        </div>
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:10px">Manter últimos</div>
+          <div class="dias-opcoes" id="diasOpts"></div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);text-align:center;padding:6px;margin-bottom:10px;min-height:18px" id="autoLastRun"></div>
+        <button id="btnAutoRun" class="btn-deletar">▶ Executar agora</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- GRID PRINCIPAL -->
+<div class="main-grid" id="mainGrid" style="display:none">
+<div id="map"></div>
+
+<div class="sidebar">
+  <!-- STATS -->
+  <div class="sidebar-section">
+    <div class="sidebar-title">📊 Resumo do dia</div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Relatórios hoje</div></div>
+      <div class="stat-card"><div class="stat-num" id="statTecnicos">0</div><div class="stat-label">Técnicos ativos</div></div>
+    </div>
+  </div>
+
+  <!-- TÉCNICOS -->
+  <div class="sidebar-section">
+    <div class="sidebar-title">👷 Técnicos em campo</div>
+    <div id="listaTecnicos"></div>
+  </div>
+
+  <!-- RELATÓRIOS RECENTES -->
+  <div class="sidebar-section" style="flex:1">
+    <div class="sidebar-title" style="margin-bottom:10px">📋 Relatórios recentes</div>
+    <input type="text" class="filtro-input" id="filtroTecnico" placeholder="🔍 Filtrar por técnico...">
+    <div id="listaRelatorios" style="margin-top:12px"></div>
+  </div>
+</div>
+</div>
+
+<script>
+(async function() {
+  function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+let sbClient = null;
+
+async function apiFetch(url, options = {}) {
+  let session = null;
+  try { session = (await sbClient.auth.getSession()).data.session; } catch (_) {}
+  const headers = new Headers(options.headers || {});
+  if (session?.access_token) headers.set('Authorization', 'Bearer ' + session.access_token);
+  return fetch(url, { ...options, headers });
+}
+
+  let currentUser = null;
+  let map = null;
+  let markers = {};
+  let todosRelatorios = [];
+
+  // === AUTH ===
+  async function initAuth() {
+    try {
+      const cfg = await fetch('/api/config').then(r => r.json());
+      const { createClient } = supabase;
+      sbClient = createClient(cfg.supabase_url, cfg.supabase_key);
+      const { data: { session } } = await sbClient.auth.getSession();
+      if (session) {
+        currentUser = session.user;
+        const role = session.user.app_metadata?.role || '';
+        if (role !== 'gestor' && role !== 'apoio') { alert('Acesso negado.'); window.location.href = '/'; return; }
+        mostrarDashboard(session.user);
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  function mostrarDashboard(user) {
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('mainHeader').style.display = 'flex';
+    document.getElementById('mainGrid').style.display = 'grid';
+    document.getElementById('gestorNome').textContent = '👤 ' + (user.user_metadata?.nome || user.email);
+    const role = user.app_metadata?.role || '';
+    if (role !== 'gestor') document.getElementById('btnAbrirModal').style.display = 'none';
+    if (role === 'gestor') document.getElementById('btnBanco').style.display = 'inline-block';
+    initMap();
+    carregarDados();
+    if (window._bancoVerificarAuto) window._bancoVerificarAuto();
+  }
+
+  document.getElementById('btnEntrar').addEventListener('click', async () => {
+    const email = document.getElementById('dashEmail').value.trim();
+    const senha = document.getElementById('dashSenha').value;
+    const errDiv = document.getElementById('loginErroDash');
+    const btn = document.getElementById('btnEntrar');
+    errDiv.style.display = 'none';
+    btn.textContent = '⏳ Entrando...'; btn.disabled = true;
+    try {
+      const response = await fetch('/api/config');
+      if (!response.ok) throw new Error('config');
+      const cfg = await response.json();
+      if (!sbClient) sbClient = supabase.createClient(cfg.supabase_url, cfg.supabase_key);
+      const { data, error } = await sbClient.auth.signInWithPassword({ email, password: senha });
+      if (error) throw error;
+      if (!data.session) throw new Error('session');
+      const role = data.session.user.app_metadata?.role || '';
+      if (role !== 'gestor' && role !== 'apoio') {
+        errDiv.textContent = 'Seu perfil não tem acesso ao dashboard. Use a tela do técnico.';
+        errDiv.style.display = 'block'; return;
+      }
+      currentUser = data.session.user;
+      mostrarDashboard(data.session.user);
+    } catch (error) {
+      errDiv.textContent = window.LinkceAuth.message(error); errDiv.style.display = 'block';
+    } finally {
+      btn.textContent = '🔐 Entrar'; btn.disabled = false;
+    }
+  });
+
+  document.getElementById('dashSenha').addEventListener('keypress', e => { if(e.key==='Enter') document.getElementById('btnEntrar').click(); });
+  document.getElementById('btnSair').addEventListener('click', async () => { if(sbClient) await sbClient.auth.signOut(); window.location.href='/'; });
+
+  // === MAPA ===
+  function initMap() {
+    map = L.map('map').setView([-14.235, -51.925], 4); // Brasil
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap', maxZoom: 19
+    }).addTo(map);
+  }
+
+  function criarIcone(cor) {
+    return L.divIcon({
+      html: `<div style="background:${cor};width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4)"></div>`,
+      className: '', iconSize: [14,14], iconAnchor: [7,7]
+    });
+  }
+
+  const _geocacheEndereco = {};
+  async function buscarEndereco(lat, lon) {
+    const chave = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    if (_geocacheEndereco[chave]) return _geocacheEndereco[chave];
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&accept-language=pt-BR`, {
+        headers: { 'Accept-Language': 'pt-BR' }
+      });
+      const data = await res.json();
+      const a = data.address || {};
+      const partes = [
+        a.road || a.pedestrian || a.footway,
+        a.suburb || a.neighbourhood || a.city_district,
+        a.city || a.town || a.village || a.municipality,
+        a.state
+      ].filter(Boolean);
+      const endereco = partes.length ? partes.join(', ') : (data.display_name || 'Endereço não encontrado');
+      _geocacheEndereco[chave] = endereco;
+      return endereco;
+    } catch {
+      return 'Endereço indisponível';
+    }
+  }
+
+  function bindPopupComEndereco(layer, nome, dt, iconeNome = '👷') {
+    function html(endereco) {
+      return `<div class="popup-nome">${iconeNome} ${escapeHtml(nome)}</div>` +
+             `<div class="popup-info">📅 ${dt}<br>📍 ${escapeHtml(endereco)}</div>`;
+    }
+    layer.bindPopup(html('Carregando...'));
+    layer.on('popupopen', async () => {
+      const { lat, lng } = layer.getLatLng();
+      const endereco = await buscarEndereco(lat, lng);
+      layer.getPopup().setContent(html(endereco));
+    });
+  }
+
+  function plotarMarcadores(relatorios) {
+    Object.values(markers).forEach(m => map.removeLayer(m));
+    markers = {};
+
+    // Última posição de cada técnico
+    const ultimaPorTecnico = {};
+    relatorios.forEach(r => {
+      if (r.latitude && r.longitude) {
+        if (!ultimaPorTecnico[r.tecnico]) ultimaPorTecnico[r.tecnico] = r;
+      }
+    });
+
+    const pontos = [];
+    Object.entries(ultimaPorTecnico).forEach(([tecnico, r]) => {
+      const dt = new Date(r.criado_em).toLocaleString('pt-BR');
+      const marker = L.marker([r.latitude, r.longitude], { icon: criarIcone('#06D6A0') }).addTo(map);
+      bindPopupComEndereco(marker, tecnico, dt, '👷');
+      markers[tecnico] = marker;
+      pontos.push([r.latitude, r.longitude]);
+    });
+
+    // Todos os outros relatórios com localização (marcadores menores)
+    relatorios.forEach(r => {
+      if (!r.latitude || !r.longitude) return;
+      if (ultimaPorTecnico[r.tecnico]?.id === r.id) return;
+      const dt = new Date(r.criado_em).toLocaleString('pt-BR');
+      const cm = L.circleMarker([r.latitude, r.longitude], { radius: 5, color: '#118AB2', fillColor: '#118AB2', fillOpacity: 0.5, weight: 1 }).addTo(map);
+      bindPopupComEndereco(cm, r.tecnico, dt, '👷');
+    });
+
+    if (pontos.length > 0) map.fitBounds(pontos, { padding: [50, 50] });
+  }
+
+  // === DADOS ===
+  async function carregarDados() {
+    try {
+      const res = await apiFetch('/api/relatorios?limite=200');
+      const json = await res.json();
+      todosRelatorios = json.relatorios || [];
+      renderizarTudo(todosRelatorios);
+    } catch(e) { console.error('Erro ao carregar dados:', e); }
+  }
+
+  function renderizarTudo(relatorios) {
+    plotarMarcadores(relatorios);
+    renderizarStats(relatorios);
+    renderizarTecnicos(relatorios);
+    renderizarRelatorios(relatorios);
+  }
+
+  function renderizarStats(relatorios) {
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const deHoje = relatorios.filter(r => new Date(r.criado_em).toLocaleDateString('pt-BR') === hoje);
+    const tecnicos = new Set(deHoje.map(r => r.tecnico).filter(Boolean));
+    document.getElementById('statTotal').textContent = deHoje.length;
+    document.getElementById('statTecnicos').textContent = tecnicos.size;
+  }
+
+  function renderizarTecnicos(relatorios) {
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const porTecnico = {};
+    relatorios.forEach(r => {
+      if (!r.tecnico) return;
+      if (!porTecnico[r.tecnico]) porTecnico[r.tecnico] = { total: 0, ultimo: null, temLoc: false };
+      porTecnico[r.tecnico].total++;
+      if (!porTecnico[r.tecnico].ultimo) porTecnico[r.tecnico].ultimo = r;
+      if (r.latitude) porTecnico[r.tecnico].temLoc = true;
+    });
+
+    const el = document.getElementById('listaTecnicos');
+    el.innerHTML = '';
+    Object.entries(porTecnico).forEach(([nome, info]) => {
+      const deHoje = new Date(info.ultimo?.criado_em).toLocaleDateString('pt-BR') === hoje;
+      const div = document.createElement('div');
+      div.className = 'tec-card';
+      div.innerHTML = `
+        <div class="tec-nome">👷 ${escapeHtml(nome)}</div>
+        <div class="tec-info">📋 ${info.total} relatório(s) | ${deHoje ? 'ativo hoje' : 'sem atividade hoje'}</div>
+        <span class="tec-badge ${deHoje ? 'badge-online' : 'badge-offline'}">${deHoje ? '● Online hoje' : '○ Inativo'}</span>
+      `;
+      div.addEventListener('click', () => {
+        document.querySelectorAll('.tec-card').forEach(c => c.classList.remove('ativo'));
+        div.classList.add('ativo');
+        if (markers[nome]) { map.setView(markers[nome].getLatLng(), 14); markers[nome].openPopup(); }
+        abrirModalTecnico(nome);
+      });
+      el.appendChild(div);
+    });
+  }
+
+  function renderizarRelatorios(relatorios) {
+    const el = document.getElementById('listaRelatorios');
+    el.innerHTML = '';
+    relatorios.slice(0, 50).forEach(r => {
+      const dt = new Date(r.criado_em).toLocaleString('pt-BR');
+      const temLoc = r.latitude && r.longitude;
+      const div = document.createElement('div');
+      div.className = 'relatorio-item';
+      div.innerHTML = `
+        <div class="rel-dot"></div>
+        <div>
+          <div class="rel-tecnico">${escapeHtml(r.tecnico || 'Sem nome')}</div>
+          <div class="rel-data">📅 ${dt}</div>
+          ${temLoc ? `<div class="rel-loc">📍 ${Number(r.latitude).toFixed(4)}, ${Number(r.longitude).toFixed(4)}</div>` : ''}
+        </div>
+      `;
+      div.addEventListener('click', () => {
+        if (temLoc) map.setView([r.latitude, r.longitude], 16);
+      });
+      el.appendChild(div);
+    });
+    if (relatorios.length === 0) el.innerHTML = '<div style="color:#a0aec0;font-size:13px;padding:8px 0">Nenhum relatório encontrado.</div>';
+  }
+
+  // Filtro por técnico
+  document.getElementById('filtroTecnico').addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    const filtrados = q ? todosRelatorios.filter(r => (r.tecnico||'').toLowerCase().includes(q)) : todosRelatorios;
+    renderizarRelatorios(filtrados);
+  });
+
+  // === MODAL TÉCNICO ===
+  async function abrirModalTecnico(nome) {
+    document.getElementById('modalTecNome').textContent = '👷 ' + nome;
+    document.getElementById('modalTecSub').textContent = 'Relatórios dos últimos 7 dias';
+    document.getElementById('modalTecBody').innerHTML = '<div class="modal-empty">⏳ Carregando...</div>';
+    document.getElementById('modalTecnico').style.display = 'flex';
+
+    try {
+      const res = await apiFetch(`/api/relatorios?tecnico=${encodeURIComponent(nome)}&dias=7&limite=50`);
+      const json = await res.json();
+      const rels = json.relatorios || [];
+      const body = document.getElementById('modalTecBody');
+
+      document.getElementById('modalTecSub').textContent =
+        `${rels.length} relatório(s) nos últimos 7 dias`;
+
+      if (rels.length === 0) {
+        body.innerHTML = '<div class="modal-empty">Nenhum relatório nos últimos 7 dias.</div>';
+        return;
+      }
+
+      body.innerHTML = '';
+      rels.forEach((r, i) => {
+        const dt = new Date(r.criado_em).toLocaleString('pt-BR');
+        const temLoc = r.latitude && r.longitude;
+        const div = document.createElement('div');
+        div.className = 'modal-rel-item';
+        div.innerHTML = `
+          <div class="modal-rel-num">#${i + 1}</div>
+          <div>
+            <div class="modal-rel-nome">👷 ${escapeHtml(r.tecnico || nome)}</div>
+            <div class="modal-rel-data">📅 ${dt}</div>
+            ${temLoc
+              ? `<div class="modal-rel-loc">📍 ${Number(r.latitude).toFixed(5)}, ${Number(r.longitude).toFixed(5)}</div>`
+              : '<div class="modal-rel-loc" style="color:#4a5568">📍 Sem localização</div>'}
+          </div>
+        `;
+        if (temLoc) {
+          div.style.cursor = 'pointer';
+          div.addEventListener('click', () => {
+            map.setView([r.latitude, r.longitude], 16);
+            document.getElementById('modalTecnico').style.display = 'none';
+          });
+        }
+        body.appendChild(div);
+      });
+    } catch(e) {
+      document.getElementById('modalTecBody').innerHTML = '<div class="modal-empty">❌ Erro ao carregar relatórios.</div>';
+    }
+  }
+
+  document.getElementById('btnFecharModalTec').addEventListener('click', () => {
+    document.getElementById('modalTecnico').style.display = 'none';
+  });
+  document.getElementById('modalTecnico').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalTecnico'))
+      document.getElementById('modalTecnico').style.display = 'none';
+  });
+
+  // Atualiza dados a cada 2 minutos
+  setInterval(carregarDados, 120000);
+
+  // === MODAL CRIAR USUÁRIO ===
+  let cargoSelecionado = 'tecnico';
+
+  document.querySelectorAll('.cargo-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      document.querySelectorAll('.cargo-opt').forEach(o => o.classList.remove('ativo'));
+      opt.classList.add('ativo');
+      cargoSelecionado = opt.dataset.cargo;
+    });
+  });
+
+  document.getElementById('btnAbrirModal').addEventListener('click', () => {
+    document.getElementById('modalUsuario').style.display = 'flex';
+    document.getElementById('modalMsg').textContent = '';
+    document.getElementById('novoNome').value = '';
+    document.getElementById('novoEmail').value = '';
+    document.getElementById('novaSenha').value = '';
+    cargoSelecionado = 'tecnico';
+    document.querySelectorAll('.cargo-opt').forEach(o => o.classList.remove('ativo'));
+    document.querySelector('.cargo-opt[data-cargo="tecnico"]').classList.add('ativo');
+  });
+
+  document.getElementById('btnFecharModal').addEventListener('click', () => {
+    document.getElementById('modalUsuario').style.display = 'none';
+  });
+
+  document.getElementById('modalUsuario').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalUsuario'))
+      document.getElementById('modalUsuario').style.display = 'none';
+  });
+
+  document.getElementById('btnCriarUsuario').addEventListener('click', async () => {
+    const nome  = document.getElementById('novoNome').value.trim();
+    const email = document.getElementById('novoEmail').value.trim();
+    const senha = document.getElementById('novaSenha').value;
+    const msg   = document.getElementById('modalMsg');
+    const btn   = document.getElementById('btnCriarUsuario');
+
+    msg.className = 'modal-msg';
+    msg.textContent = '';
+
+    if (!nome || !email || !senha) {
+      msg.className = 'modal-msg err'; msg.textContent = '⚠️ Preencha todos os campos.'; return;
+    }
+    if (senha.length < 12 || senha.length > 128) {
+      msg.className = 'modal-msg err'; msg.textContent = '⚠️ Senha precisa ter de 12 a 128 caracteres.'; return;
+    }
+
+    btn.textContent = '⏳ Criando...'; btn.disabled = true;
+    try {
+      const res = await apiFetch('/api/criar-usuario', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome, email, senha, cargo: cargoSelecionado })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erro desconhecido');
+      msg.className = 'modal-msg ok';
+      msg.textContent = `✅ ${data.mensagem}`;
+      document.getElementById('novoNome').value = '';
+      document.getElementById('novoEmail').value = '';
+      document.getElementById('novaSenha').value = '';
+    } catch(e) {
+      msg.className = 'modal-msg err';
+      msg.textContent = '❌ ' + e.message;
+    }
+    btn.textContent = 'Criar acesso'; btn.disabled = false;
+  });
+
+  // === MODAL RELATÓRIOS POR TÉCNICO / DIA ===
+  document.getElementById('btnAbrirListaTec').addEventListener('click', () => {
+    mostrarListaTecnicos();
+    document.getElementById('modalRelDia').style.display = 'flex';
+  });
+
+  document.getElementById('btnFecharRelDia').addEventListener('click', () => {
+    document.getElementById('modalRelDia').style.display = 'none';
+  });
+
+  document.getElementById('modalRelDia').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalRelDia'))
+      document.getElementById('modalRelDia').style.display = 'none';
+  });
+
+  document.getElementById('btnVoltarLista').addEventListener('click', mostrarListaTecnicos);
+
+  function mostrarListaTecnicos() {
+    const porTec = {};
+    todosRelatorios.forEach(r => {
+      if (!r.tecnico) return;
+      if (!porTec[r.tecnico]) porTec[r.tecnico] = { total: 0, ultimo: null };
+      porTec[r.tecnico].total++;
+      if (!porTec[r.tecnico].ultimo) porTec[r.tecnico].ultimo = r.criado_em;
+    });
+
+    document.getElementById('relDiaNome').textContent = '👷 Técnicos';
+    document.getElementById('relDiaSub').textContent = `${Object.keys(porTec).length} técnico(s) com relatórios`;
+    document.getElementById('btnVoltarLista').style.display = 'none';
+
+    const body = document.getElementById('relDiaBody');
+    body.innerHTML = '';
+
+    if (Object.keys(porTec).length === 0) {
+      body.innerHTML = '<div class="modal-empty">Nenhum relatório carregado ainda.</div>';
+      return;
+    }
+
+    const sorted = Object.entries(porTec).sort((a, b) => {
+      return new Date(b[1].ultimo) - new Date(a[1].ultimo);
+    });
+
+    sorted.forEach(([nome, info]) => {
+      const div = document.createElement('div');
+      div.className = 'tec-list-item';
+      const ult = info.ultimo ? new Date(info.ultimo).toLocaleDateString('pt-BR') : '';
+      div.innerHTML = `
+        <div>
+          <div class="tec-list-nome">👷 ${escapeHtml(nome)}</div>
+          <div class="tec-list-info">📋 ${info.total} relatório(s)${ult ? ' · último em ' + ult : ''}</div>
+        </div>
+        <span class="tec-list-arrow">›</span>
+      `;
+      div.addEventListener('click', () => mostrarRelatoriosPorDia(nome));
+      body.appendChild(div);
+    });
+  }
+
+  async function mostrarRelatoriosPorDia(nome) {
+    document.getElementById('relDiaNome').textContent = '👷 ' + nome;
+    document.getElementById('relDiaSub').textContent = '⏳ Carregando...';
+    document.getElementById('btnVoltarLista').style.display = 'inline-block';
+    document.getElementById('relDiaBody').innerHTML = '<div class="modal-empty">⏳ Carregando...</div>';
+
+    try {
+      const res = await apiFetch(`/api/relatorios?tecnico=${encodeURIComponent(nome)}&limite=200`);
+      const json = await res.json();
+      const rels = json.relatorios || [];
+
+      document.getElementById('relDiaSub').textContent = `${rels.length} relatório(s) no total`;
+
+      const body = document.getElementById('relDiaBody');
+      body.innerHTML = '';
+
+      if (rels.length === 0) {
+        body.innerHTML = '<div class="modal-empty">Nenhum relatório encontrado.</div>';
+        return;
+      }
+
+      const porDia = {};
+      rels.forEach(r => {
+        const dia = new Date(r.criado_em).toLocaleDateString('pt-BR');
+        if (!porDia[dia]) porDia[dia] = [];
+        porDia[dia].push(r);
+      });
+
+      Object.entries(porDia).forEach(([dia, relsNoDia]) => {
+        const grupo = document.createElement('div');
+        grupo.className = 'dia-grupo';
+        const header = document.createElement('div');
+        header.className = 'dia-header clicavel';
+
+        if (relsNoDia.length === 1) {
+          const r = relsNoDia[0];
+          const hora = new Date(r.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const temLoc = r.latitude && r.longitude;
+
+          header.innerHTML = `
+            <div class="dia-esq">
+              <span class="dia-titulo">📅 ${dia}</span>
+              <span class="dia-info">🕐 ${hora}</span>
+            </div>
+            <div class="dia-dir">
+              <span class="dia-badge">1 relatório</span>
+              ${temLoc ? '<button class="btn-mapa" title="Ver no mapa">📍</button>' : ''}
+            </div>
+          `;
+
+          if (temLoc) {
+            header.querySelector('.btn-mapa').addEventListener('click', e => {
+              e.stopPropagation();
+              map.setView([r.latitude, r.longitude], 16);
+              document.getElementById('modalRelDia').style.display = 'none';
+            });
+          }
+
+          header.addEventListener('click', () => abrirRelatorioCompleto(r.id, nome, dia + ' · ' + hora));
+
+        } else {
+          header.innerHTML = `
+            <div class="dia-esq">
+              <span class="dia-titulo">📅 ${dia}</span>
+            </div>
+            <div class="dia-dir">
+              <span class="dia-badge">${relsNoDia.length} relatórios</span>
+              <span class="dia-arrow">›</span>
+            </div>
+          `;
+
+          const sublist = document.createElement('div');
+          sublist.className = 'dia-sublist';
+          sublist.style.display = 'none';
+
+          relsNoDia.forEach(r => {
+            const hora = new Date(r.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            const temLoc = r.latitude && r.longitude;
+            const item = document.createElement('div');
+            item.className = 'rel-mini-item clicavel';
+            item.innerHTML = `
+              <span class="rel-mini-hora">🕐 ${hora}</span>
+              ${temLoc ? '<button class="btn-mapa" title="Ver no mapa">📍</button>' : ''}
+            `;
+
+            if (temLoc) {
+              item.querySelector('.btn-mapa').addEventListener('click', e => {
+                e.stopPropagation();
+                map.setView([r.latitude, r.longitude], 16);
+                document.getElementById('modalRelDia').style.display = 'none';
+              });
+            }
+
+            item.addEventListener('click', () => abrirRelatorioCompleto(r.id, nome, dia + ' · ' + hora));
+            sublist.appendChild(item);
+          });
+
+          header.addEventListener('click', () => {
+            const aberto = header.classList.toggle('aberto');
+            sublist.style.display = aberto ? 'block' : 'none';
+          });
+
+          grupo.appendChild(header);
+          grupo.appendChild(sublist);
+          body.appendChild(grupo);
+          return;
+        }
+
+        grupo.appendChild(header);
+        body.appendChild(grupo);
+      });
+    } catch(e) {
+      document.getElementById('relDiaBody').innerHTML = '<div class="modal-empty">❌ Erro ao carregar relatórios.</div>';
+      document.getElementById('relDiaSub').textContent = 'Erro ao carregar';
+    }
+  }
+
+  // === MODAL RELATÓRIO COMPLETO ===
+  async function abrirRelatorioCompleto(id, tecnico, momento) {
+    document.getElementById('relCompletoSub').textContent = `👷 ${tecnico} · ${momento}`;
+    document.getElementById('relCompletoTexto').textContent = '⏳ Carregando...';
+    document.getElementById('btnCopiarRel').textContent = '📋 Copiar relatório';
+    document.getElementById('btnCopiarRel').classList.remove('copiado');
+    document.getElementById('modalRelCompleto').style.display = 'flex';
+    try {
+      const res = await apiFetch(`/api/relatorios/${id}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      document.getElementById('relCompletoTexto').textContent =
+        data.relatorio_completo || '(relatório sem texto salvo)';
+    } catch(e) {
+      document.getElementById('relCompletoTexto').textContent = '❌ Erro ao carregar o relatório.';
+    }
+  }
+
+  document.getElementById('btnFecharRelCompleto').addEventListener('click', () => {
+    document.getElementById('modalRelCompleto').style.display = 'none';
+  });
+  document.getElementById('modalRelCompleto').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalRelCompleto'))
+      document.getElementById('modalRelCompleto').style.display = 'none';
+  });
+  document.getElementById('btnCopiarRel').addEventListener('click', async () => {
+    const texto = document.getElementById('relCompletoTexto').textContent;
+    const btn = document.getElementById('btnCopiarRel');
+    try {
+      await navigator.clipboard.writeText(texto);
+      btn.textContent = '✅ Copiado!';
+      btn.classList.add('copiado');
+      setTimeout(() => { btn.textContent = '📋 Copiar relatório'; btn.classList.remove('copiado'); }, 2000);
+    } catch(e) {
+      alert('Não foi possível copiar. Selecione o texto manualmente.');
+    }
+  });
+
+  initAuth();
+})();
+
+// === MÓDULO BANCO ===
+(function() {
+  const LIMITE_MB = 500;
+  const OPCOES_DIAS = [1, 3, 7, 14, 30, 60, 90];
+
+  let diasComDados = {};      // { "2026-06-01": 5, ... }
+  let diasSelecionados = new Set();
+  let mesAtual = new Date(); mesAtual.setDate(1);
+  let autoConfig = JSON.parse(localStorage.getItem('linkce_auto_cleanup') || '{"ativo":false,"manter_dias":7}');
+
+  function salvarAuto() { localStorage.setItem('linkce_auto_cleanup', JSON.stringify(autoConfig)); }
+
+  function formatarDataBR(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  // ── ABRIR / FECHAR ──────────────────────────────────────────
+  document.getElementById('btnBanco').addEventListener('click', async () => {
+    document.getElementById('modalBanco').style.display = 'flex';
+    await carregarStats();
+    renderCalendario();
+    renderAuto();
+  });
+  document.getElementById('btnFecharBanco').addEventListener('click', () => {
+    document.getElementById('modalBanco').style.display = 'none';
+  });
+  document.getElementById('modalBanco').addEventListener('click', e => {
+    if (e.target === document.getElementById('modalBanco'))
+      document.getElementById('modalBanco').style.display = 'none';
+  });
+
+  // ── TABS ────────────────────────────────────────────────────
+  document.getElementById('tabManual').addEventListener('click', () => {
+    document.getElementById('tabManual').classList.add('ativo');
+    document.getElementById('tabAuto').classList.remove('ativo');
+    document.getElementById('panelManual').style.display = 'block';
+    document.getElementById('panelAuto').style.display = 'none';
+  });
+  document.getElementById('tabAuto').addEventListener('click', () => {
+    document.getElementById('tabAuto').classList.add('ativo');
+    document.getElementById('tabManual').classList.remove('ativo');
+    document.getElementById('panelAuto').style.display = 'block';
+    document.getElementById('panelManual').style.display = 'none';
+    renderAuto();
+  });
+
+  // ── STATS ───────────────────────────────────────────────────
+  async function carregarStats() {
+    document.getElementById('bancoSub').textContent = 'Carregando...';
+    try {
+      const data = await apiFetch('/api/banco/stats').then(r => r.json());
+      diasComDados = {};
+      (data.por_dia || []).forEach(d => { diasComDados[d.dia] = Number(d.total); });
+
+      const mb = (data.size_bytes || 0) / (1024 * 1024);
+      const pct = Math.min((mb / LIMITE_MB) * 100, 100);
+      const cor = pct > 80 ? '#FF6B35' : pct > 50 ? '#FFD23F' : '#06D6A0';
+
+      document.getElementById('bancoUsageLabel').textContent =
+        data.rpc_ok ? `${mb.toFixed(2)} MB de ${LIMITE_MB} MB` : `≈${mb.toFixed(2)} MB (estimativa)`;
+      document.getElementById('bancoPct').textContent = pct.toFixed(1) + '%';
+      const fill = document.getElementById('bancoUsageFill');
+      fill.style.width = pct + '%';
+      fill.style.background = `linear-gradient(90deg,#06D6A0,${cor})`;
+
+      const faixaData = data.oldest_date
+        ? ` · de ${formatarDataBR(data.oldest_date)}${data.newest_date && data.newest_date !== data.oldest_date ? ' a ' + formatarDataBR(data.newest_date) : ''}`
+        : '';
+      document.getElementById('bancoInfoRow').textContent = `${data.total_rows} registro(s)${faixaData}`;
+      document.getElementById('bancoSub').textContent =
+        `${data.total_rows} registros · ${mb.toFixed(2)} MB${data.rpc_ok ? '' : ' (est.)'}`;
+    } catch(e) {
+      document.getElementById('bancoSub').textContent = '❌ Erro ao carregar estatísticas';
+    }
+  }
+
+  // ── CALENDÁRIO ──────────────────────────────────────────────
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                 'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DIAS_SEMANA = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  document.getElementById('btnMesAnt').addEventListener('click', () => {
+    mesAtual.setMonth(mesAtual.getMonth() - 1); renderCalendario();
+  });
+  document.getElementById('btnMesPro').addEventListener('click', () => {
+    mesAtual.setMonth(mesAtual.getMonth() + 1); renderCalendario();
+  });
+
+  function renderCalendario() {
+    const ano = mesAtual.getFullYear();
+    const mes = mesAtual.getMonth();
+    document.getElementById('mesLabel').textContent = `${MESES[mes]} ${ano}`;
+
+    const grid = document.getElementById('calGrid');
+    grid.innerHTML = '';
+
+    DIAS_SEMANA.forEach(d => {
+      const h = document.createElement('div');
+      h.className = 'cal-header'; h.textContent = d;
+      grid.appendChild(h);
+    });
+
+    const primeiroDia = new Date(ano, mes, 1).getDay();
+    for (let i = 0; i < primeiroDia; i++) {
+      const esp = document.createElement('div'); esp.className = 'cal-dia';
+      grid.appendChild(esp);
+    }
+
+    const totalDias = new Date(ano, mes + 1, 0).getDate();
+    for (let dia = 1; dia <= totalDias; dia++) {
+      const diaStr = `${ano}-${String(mes + 1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+      const total = diasComDados[diaStr] || 0;
+      const sel = diasSelecionados.has(diaStr);
+
+      const el = document.createElement('div');
+      el.className = 'cal-dia' + (total > 0 ? ' tem-dados' : ' vazio') + (sel ? ' selecionado' : '');
+      el.innerHTML = `<span>${dia}</span>${total > 0 ? `<span class="cal-count">${total}</span>` : ''}`;
+
+      if (total > 0) {
+        el.addEventListener('click', () => {
+          if (diasSelecionados.has(diaStr)) diasSelecionados.delete(diaStr);
+          else diasSelecionados.add(diaStr);
+          renderCalendario();
+        });
+      }
+      grid.appendChild(el);
+    }
+
+    atualizarSelecao();
+  }
+
+  function atualizarSelecao() {
+    const n = diasSelecionados.size;
+    const totalReg = [...diasSelecionados].reduce((s, d) => s + (diasComDados[d] || 0), 0);
+    const info = document.getElementById('selInfo');
+    const btn = document.getElementById('btnDeletar');
+    if (n === 0) {
+      info.textContent = 'Clique nos dias azuis para selecionar';
+      btn.disabled = true;
+    } else {
+      info.textContent = `${n} dia(s) selecionado(s) · ${totalReg} registro(s) serão deletados`;
+      btn.disabled = false;
+    }
+  }
+
+  // ── DELETE MANUAL ────────────────────────────────────────────
+  document.getElementById('btnDeletar').addEventListener('click', async () => {
+    const datas = [...diasSelecionados].sort();
+    const totalReg = datas.reduce((s, d) => s + (diasComDados[d] || 0), 0);
+    if (!confirm(`⚠️ Deletar ${totalReg} registro(s) de ${datas.length} dia(s)?\n\nDatas: ${datas.map(formatarDataBR).join(', ')}\n\nEsta ação não pode ser desfeita.`)) return;
+
+    const btn = document.getElementById('btnDeletar');
+    btn.textContent = '⏳ Deletando...'; btn.disabled = true;
+    try {
+      const res = await apiFetch('/api/banco/deletar', {
+        method: 'DELETE',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ modo: 'manual', datas })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erro');
+      alert(`✅ ${data.deletados} registro(s) deletados com sucesso!`);
+      diasSelecionados.clear();
+      await carregarStats();
+      renderCalendario();
+    } catch(e) {
+      alert('❌ Erro ao deletar: ' + e.message);
+    }
+    btn.textContent = '🗑️ Deletar selecionados';
+  });
+
+  // ── AUTO MODE ────────────────────────────────────────────────
+  function renderAuto() {
+    const tog = document.getElementById('toggleAuto');
+    if (autoConfig.ativo) tog.classList.add('ativo'); else tog.classList.remove('ativo');
+    document.getElementById('autoStatusLabel').textContent = autoConfig.ativo
+      ? `Ativa · mantendo últimos ${autoConfig.manter_dias} dia(s)` : 'Inativa';
+
+    const opts = document.getElementById('diasOpts');
+    opts.innerHTML = '';
+    OPCOES_DIAS.forEach(d => {
+      const btn = document.createElement('button');
+      btn.className = 'dia-opt' + (autoConfig.manter_dias === d ? ' ativo' : '');
+      btn.textContent = d === 1 ? '1 dia' : `${d} dias`;
+      btn.addEventListener('click', () => {
+        autoConfig.manter_dias = d; salvarAuto(); renderAuto();
+      });
+      opts.appendChild(btn);
+    });
+
+    const saved = localStorage.getItem('linkce_auto_last_run');
+    const el = document.getElementById('autoLastRun');
+    if (saved) {
+      const info = JSON.parse(saved);
+      el.textContent = `Última execução: ${new Date(info.ts).toLocaleString('pt-BR')} · ${info.deletados} registro(s) removidos`;
+    } else {
+      el.textContent = 'Nenhuma execução registrada ainda';
+    }
+  }
+
+  document.getElementById('toggleAuto').addEventListener('click', () => {
+    autoConfig.ativo = !autoConfig.ativo; salvarAuto(); renderAuto();
+  });
+
+  async function executarAutoLimpeza(silencioso = false) {
+    try {
+      const res = await apiFetch('/api/banco/deletar', {
+        method: 'DELETE',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ modo: 'automatico', manter_dias: autoConfig.manter_dias })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Erro');
+      localStorage.setItem('linkce_auto_last_run', JSON.stringify({ ts: new Date().toISOString(), deletados: data.deletados }));
+      return data.deletados;
+    } catch(e) {
+      if (!silencioso) console.error('Auto-limpeza falhou:', e);
+      return -1;
+    }
+  }
+
+  document.getElementById('btnAutoRun').addEventListener('click', async () => {
+    const btn = document.getElementById('btnAutoRun');
+    btn.textContent = '⏳ Executando...'; btn.disabled = true;
+    const deletados = await executarAutoLimpeza();
+    if (deletados >= 0) {
+      await carregarStats();
+      renderCalendario();
+      renderAuto();
+      alert(deletados > 0
+        ? `✅ ${deletados} registro(s) removidos. Banco atualizado.`
+        : '✅ Nada para deletar. Banco já está dentro do filtro.');
+    } else {
+      alert('❌ Erro ao executar auto-limpeza. Verifique os logs do servidor.');
+    }
+    btn.textContent = '▶ Executar agora'; btn.disabled = false;
+  });
+
+  // Exposta para ser chamada após login (em mostrarDashboard)
+  window._bancoVerificarAuto = async function() {
+    if (!autoConfig.ativo) return;
+    const deletados = await executarAutoLimpeza(true);
+    if (deletados > 0) console.log(`🗑️ Auto-limpeza: ${deletados} registro(s) removidos ao iniciar`);
+  };
+})();
+</script>
+</body>
+</html>

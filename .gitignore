@@ -3,3 +3,6 @@ __pycache__/
 .env
 venv/
 .DS_Store
+.env.*
+!.env.example
+Relatorio-Linkce/*.db

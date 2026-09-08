@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Recuperar acesso — Relatório Linkce</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#0a0e27;color:#fff;font:16px system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}
+    main{width:100%;max-width:460px;padding:32px;border:1px solid #38405b;border-radius:20px;background:#151b35}
+    h1{font-size:26px;margin-top:0}p{line-height:1.6;color:#c6cddd}label{display:block;margin:18px 0 8px}
+    input,button{width:100%;padding:14px;border-radius:10px;font:inherit}
+    input{background:#090e21;color:white;border:1px solid #65708c}button{margin-top:22px;background:#06d6a0;border:0;color:#071e25;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.5;cursor:wait}a{color:#72dcff;display:inline-block;margin-top:20px}
+    :focus-visible{outline:3px solid #72dcff;outline-offset:3px}[hidden]{display:none!important}
+    #status{min-height:48px;overflow-wrap:anywhere}
+  </style>
+</head>
+<body>
+<main>
+  <h1 id="title">Recuperar acesso</h1>
+  <p id="intro">Informe o email da sua conta para solicitar um link de redefinição.</p>
+  <p id="status" role="status" aria-live="polite">Carregando...</p>
+  <form id="requestForm" hidden>
+    <label for="email">Email cadastrado</label>
+    <input id="email" type="email" required maxlength="254" autocomplete="email">
+    <button id="requestButton" type="submit">Enviar link de recuperação</button>
+  </form>
+  <form id="passwordForm" hidden>
+    <label for="password">Nova senha</label>
+    <input id="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
+    <label for="repeat">Repita a nova senha</label>
+    <input id="repeat" type="password" required minlength="12" maxlength="128" autocomplete="new-password">
+    <p>Use de 12 a 128 caracteres. A senha deve atender também às regras do provedor.</p>
+    <button id="saveButton" type="submit" disabled>Salvar nova senha</button>
+  </form>
+  <a href="/recuperar-senha" id="again" hidden>Solicitar outro link</a><br>
+  <a href="/">Voltar ao login</a>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/static/auth-ui.js"></script>
+<script src="/static/account.js"></script>
+</body>
+</html>
