@@ -11,7 +11,7 @@
 <script defer src="/static/panel.js"></script>
 </head>
 <body>
-<header><a class="brand" href="/">LINKCE<span>Gestão de campo</span></a><nav aria-label="Navegação"><a href="/tecnico" target="_blank" rel="noopener">Área do técnico ↗</a><button id="newUser" hidden>Novo usuário</button><button id="logout" hidden>Sair</button></nav></header>
+<header><a class="brand" href="/">LINKCE<span>Gestão de campo</span></a><nav aria-label="Navegação"><a href="/tecnico" target="_blank" rel="noopener">Área do técnico ↗</a><button id="bankButton" hidden>Banco de relatórios</button><button id="newUser" hidden>Novo usuário</button><button id="logout" hidden>Sair</button></nav></header>
 <main>
 <section id="login" class="login surface">
 <p class="eyebrow">ACESSO À OPERAÇÃO</p><h1>Entre no painel</h1><p class="muted">Use sua conta de gestor ou apoio.</p>
@@ -29,4 +29,10 @@
 </main>
 <dialog id="detail"><div class="dialog-head"><h2>Detalhes do relatório</h2><button type="button" data-close="detail" aria-label="Fechar detalhes">Fechar</button></div><p id="detailStatus" role="status"></p><dl id="detailMeta"></dl><pre id="detailText"></pre><div class="dialog-actions"><button id="copy" disabled>Copiar relatório</button><a id="mapLink" target="_blank" rel="noopener noreferrer" hidden>Abrir localização ↗</a></div></dialog>
 <dialog id="userDialog"><div class="dialog-head"><h2>Cadastrar usuário</h2><button type="button" data-close="userDialog">Fechar</button></div><form id="userForm"><label>Nome<input name="nome" required maxlength="120" autocomplete="name"></label><label>Email<input name="email" type="email" required maxlength="254" autocomplete="off"></label><label>Senha inicial<input name="senha" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label><label>Perfil<select name="cargo"><option value="tecnico">Técnico — envio de relatórios</option><option value="apoio">Apoio — consulta e envio</option><option value="gestor">Gestor — consulta e cadastro</option></select></label><p class="muted">Senha de 12 a 128 caracteres. A troca no primeiro acesso não é obrigatória nesta versão.</p><button id="saveUser" class="primary">Criar usuário</button><p id="userStatus" role="status" aria-live="polite"></p></form></dialog>
+<dialog id="bankDialog"><div class="dialog-head"><h2>Banco de relatórios</h2><button type="button" data-close="bankDialog">Fechar</button></div>
+<p>Escolha quantos dias de histórico manter. A limpeza abrange todos os técnicos e exclui os relatórios anteriores ao corte indicado.</p>
+<form id="bankPreviewForm"><label>Manter os últimos dias<input id="keepDays" type="number" min="1" max="36500" value="30" step="1" required></label><button id="previewBank">Calcular prévia</button></form>
+<p id="bankStatus" role="status" aria-live="polite"></p>
+<form id="bankDeleteForm" hidden><p>A exclusão é permanente e também remove o texto, o checklist e a localização desses relatórios. Guarde uma cópia dos dados que precisar conservar.</p><label>Digite EXCLUIR para confirmar<input id="bankConfirm" autocomplete="off" pattern="EXCLUIR" required></label><button id="deleteBank">Excluir relatórios anteriores ao corte</button></form>
+<p class="muted">A limpeza só acontece ao confirmar. Não há agendamento automático. A prévia reflete a contagem no momento da consulta.</p></dialog>
 </body></html>

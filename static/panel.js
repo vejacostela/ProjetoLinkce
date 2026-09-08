@@ -28,6 +28,7 @@ function signedOut(message = '') {
   currentUser = null; requestVersion++; detailVersion++;
   $('workspace').hidden = true; $('login').hidden = false;
   $('logout').hidden = true; $('newUser').hidden = true;
+  $('bankButton').hidden = true; $('bankDialog').close(); clearBankPreview();
   $('detail').close(); $('userDialog').close(); $('detailText').textContent = '';
   $('detailMeta').replaceChildren(); $('userForm').reset(); reportText = '';
   clearResults(); $('loginStatus').textContent = message;
@@ -104,6 +105,7 @@ async function enter(user) {
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
   currentUser = user; $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('newUser').hidden = role !== 'gestor';
+  $('bankButton').hidden = role !== 'gestor';
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
   initMap(); defaultDates(); applyFilters();
@@ -171,3 +173,43 @@ $('userForm').addEventListener('submit',async e=>{
   }catch(_){$('loginStatus').textContent='Não foi possível iniciar o acesso. Recarregue a página ou contate o responsável.';}
   finally{$('loginButton').disabled=false;}
 })();
+
+let bankPreview = null, bankVersion = 0, deletingBank = false;
+function clearBankPreview() {
+  bankVersion++; bankPreview = null;
+  $('bankConfirm').value = ''; $('bankDeleteForm').hidden = true;
+}
+$('bankButton').addEventListener('click',()=>{
+  if(currentUser?.app_metadata?.role !== 'gestor') return;
+  clearBankPreview(); $('bankStatus').textContent = ''; $('bankDialog').showModal();
+});
+$('bankDialog').addEventListener('close',clearBankPreview);
+$('keepDays').addEventListener('input',()=>{clearBankPreview();$('bankStatus').textContent='Calcule novamente após alterar o período.';});
+$('bankPreviewForm').addEventListener('submit',async event=>{
+  event.preventDefault(); if(deletingBank) return;
+  clearBankPreview(); const version=bankVersion, userId=currentUser?.id;
+  $('previewBank').disabled=true; $('bankStatus').textContent='Calculando...';
+  try {
+    const preview=await api('/api/banco/previa?manter_dias='+encodeURIComponent($('keepDays').value));
+    if(version!==bankVersion || userId!==currentUser?.id) return;
+    if(!Number.isInteger(preview.candidatos) || !preview.limite) throw new Error('Prévia inválida. Tente novamente.');
+    bankPreview=preview;
+    $('bankStatus').textContent=`Total no banco: ${preview.total}. Relatórios anteriores a ${dateLabel(preview.limite)} (Brasília): ${preview.candidatos}.`;
+    $('bankDeleteForm').hidden=preview.candidatos===0;
+  } catch(error) {if(version===bankVersion)$('bankStatus').textContent=error.message;}
+  finally {$('previewBank').disabled=false;}
+});
+$('bankDeleteForm').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(deletingBank || !bankPreview || $('bankConfirm').value !== 'EXCLUIR') return;
+  const limite=bankPreview.limite, userId=currentUser?.id;
+  deletingBank=true; $('deleteBank').disabled=true; $('previewBank').disabled=true; $('keepDays').disabled=true;
+  clearBankPreview(); $('bankStatus').textContent='Executando limpeza...';
+  try {
+    const result=await api('/api/banco/limpeza',{method:'POST',body:JSON.stringify({limite,confirmacao:'EXCLUIR'})});
+    if(userId!==currentUser?.id) return;
+    $('bankStatus').textContent=Number.isInteger(result.deletados) ? `Limpeza concluída: ${result.deletados} relatório(s) excluído(s).` : 'Limpeza concluída. Calcule uma nova prévia para conferir o banco.';
+    offset=0; await loadReports();
+  } catch(error) {if(userId===currentUser?.id)$('bankStatus').textContent=error.message+' Calcule uma nova prévia antes de repetir.';}
+  finally {deletingBank=false;$('deleteBank').disabled=false;$('previewBank').disabled=false;$('keepDays').disabled=false;}
+});

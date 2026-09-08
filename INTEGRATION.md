@@ -31,6 +31,14 @@ No repositório Relatorio-Linkce: `python -m unittest -v test_security test_acco
 
 Os testes usam serviços e identidades simulados, sem criação de usuários ou envio de mensagens reais. Validar o login e a consulta com as contas do provedor após publicação. A troca obrigatória de senha, bloqueio de usuários, formulário configurável, licenciamento e banco independente continuam fora desta etapa.
 
+## Painel único e limpeza por período
+
+`https://relatorio-linkce.vercel.app/dashboard` redireciona ao ProjetoLinkce. O formulário dos técnicos e as APIs permanecem no Relatorio-Linkce. O redirecionamento não transfere tokens; pode ser necessário entrar no novo domínio.
+
+O gestor encontra **Banco de relatórios** no ProjetoLinkce: informa quantos dias manter, calcula uma prévia e digita EXCLUIR para executar. A API usa exatamente o corte apresentado, preservando pelo menos as últimas 24 horas. A operação afeta todos os técnicos, sem relação com o filtro de consulta do painel; remove os registros completos. A prévia é uma contagem daquele instante e pode mudar se houver outras operações no banco. Não há limpeza agendada.
+
+Nenhum relatório é apagado na implantação. Os endpoints de banco continuam exigindo gestor no servidor. Publicar o coletor e depois o painel. Não é necessária migração de banco.
+
 ## Reversão
 
-Reverter o commit do painel restaura sua versão anterior. A atualização de consulta no coletor é compatível com seu dashboard existente e pode permanecer. A integração não altera registros, permissões do banco ou o formato de gravação.
+Reverter os commits restaura as interfaces anteriores, mas não recupera registros que um gestor tenha excluído usando a função de limpeza. A implantação não altera registros, permissões do banco ou o formato de gravação.

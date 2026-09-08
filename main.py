@@ -44,7 +44,7 @@ async def forward(request, path, public=False):
     except (httpx.HTTPError, ValueError):
         raise HTTPException(503, 'Não foi possível consultar o serviço de relatórios. Tente novamente.')
     if response.status_code >= 500:
-        raise HTTPException(503, 'Serviço de relatórios indisponível. Seus dados não foram apagados.')
+        raise HTTPException(503, 'Não foi possível confirmar a operação. Atualize a consulta antes de tentar novamente.')
     if response.status_code not in (200, 400, 401, 403, 404, 409, 422, 429):
         raise HTTPException(502, 'Resposta inesperada do serviço de relatórios.')
     return JSONResponse(data, status_code=response.status_code)
@@ -81,3 +81,11 @@ async def create_user(request: Request):
 @app.get('/health')
 async def health():
     return {'status': 'ok', 'application': 'ProjetoLinkce'}
+
+@app.get('/api/banco/previa')
+async def bank_preview(request: Request):
+    return await forward(request, '/api/banco/previa')
+
+@app.post('/api/banco/limpeza')
+async def bank_cleanup(request: Request):
+    return await forward(request, '/api/banco/limpeza')
