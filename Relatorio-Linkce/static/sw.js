@@ -1,4 +1,4 @@
-const CACHE = 'linkce-unified-v1';
+const CACHE = 'linkce-photos-v2';
 const SHELL = ['/tecnico', '/static/style.css', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
 
 // ── Instalação: pré-cache do shell ──────────────────────────────────────────
@@ -43,8 +43,18 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // / e /static/* → cache first
-  if (url.pathname === '/tecnico' || url.pathname.startsWith('/static/')) {
+  // Refresh the capture page online; preserve the offline fallback.
+  if (url.pathname === '/tecnico' && request.method === 'GET') {
+    e.respondWith(fetch(request).then(res => {
+      if (res.ok) {
+        const copy = res.clone();
+        e.waitUntil(caches.open(CACHE).then(c => c.put('/tecnico', copy)).catch(() => {}));
+      }
+      return res;
+    }).catch(() => caches.match('/tecnico')));
+    return;
+  }
+  if (url.pathname.startsWith('/static/')) {
     e.respondWith(
       caches.match(request).then(hit => hit || fetchECachear(request))
     );
@@ -227,4 +237,3 @@ self.addEventListener('message', e => {
     });
   }
 });
-
