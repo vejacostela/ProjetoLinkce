@@ -1,0 +1,50 @@
+/* Field-first layout: quiet surfaces, readable inputs and touch targets. */
+:root{color-scheme:light;--text-primary:#172b3a;--text-secondary:#526572;--border-color:#dce4e8;--card-bg:#fff;--shadow:none;--primary-orange:#176b59;--primary-green:#176b59}
+body{background:#f5f7f8;color:var(--text-primary);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body::before{display:none}
+.container{max-width:780px;padding:28px 20px 48px}
+.main-app-with-header{padding-top:88px}
+.card,.login-card{background:#fff;backdrop-filter:none;border:1px solid var(--border-color);border-radius:16px;box-shadow:none;padding:28px;animation:none}
+.card-title,.login-card h1{background:none;color:#172b3a;-webkit-text-fill-color:currentColor;font-size:26px;letter-spacing:-.6px;text-align:left}
+.card-subtitle{font-size:14px;line-height:1.6;margin:8px 0 28px;text-align:left;color:var(--text-secondary)}
+.form-group{animation:none;margin-bottom:22px}
+label{font-size:13px;letter-spacing:0;text-transform:none;font-weight:600;color:var(--text-primary)}
+input[type=text],input[type=number],input[type=email],input[type=password],textarea,.search-input,.qty-input,.obs-fotos,.serial-field{background:#fff;border:1px solid #cbd6dc;border-radius:8px;color:#172b3a;font-size:16px;padding:11px 12px;box-shadow:none}
+input::placeholder,textarea::placeholder{color:#72838e;font-size:14px}
+input:focus,textarea:focus{border-color:#176b59;outline:2px solid #d1e7df;outline-offset:1px;box-shadow:none}
+textarea{line-height:1.55;min-height:86px}
+.radio-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.radio-item{min-width:0}
+.radio-label{background:#fff;border:1px solid #cbd6dc;border-radius:8px;padding:12px 6px;font-size:13px;letter-spacing:0;color:#526572;box-shadow:none;min-height:44px}
+.radio-item input[type=radio]:checked + .radio-label{background:#e8f3ee;border-color:#176b59;color:#125543;box-shadow:none;transform:none}
+.radio-item input[type=radio]:focus-visible + .radio-label{outline:2px solid #176b59;outline-offset:2px}
+.checklist-section,.evidence-section{background:#f8fafb;border:1px solid #dce4e8;border-radius:10px;padding:16px}
+.checklist-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px}
+.checklist-item{background:transparent;border:0;padding:4px 0;border-radius:0}
+.checklist-item:hover{background:#edf3f1;transform:none}
+.checklist-label{min-height:40px;font-size:12px;line-height:1.4;letter-spacing:0;text-transform:none}
+input[type=checkbox]{accent-color:#176b59}
+.evidence-actions button{background:#fff;border:1px solid #cbd6dc;border-radius:8px;padding:12px;font:500 14px system-ui;color:#172b3a;min-height:44px}
+.evidence-item{background:#e8eef1}
+.search-box{display:flex;flex-wrap:nowrap;gap:8px}
+.search-input-wrapper{flex:1;min-width:0}
+.qty-input{width:64px;flex:0 0 64px}
+.btn-add{background:#e8f3ee;color:#125543;border:1px solid #c8ddd3;border-radius:8px;flex:0 0 44px;width:44px;min-height:44px;box-shadow:none}
+.search-results{background:#fff;border:1px solid #dce4e8;box-shadow:0 8px 20px #172b3a12}
+.search-item{color:#172b3a;border-color:#e7edef}
+.search-item:hover{background:#eef6f2}
+.search-item-category{color:#526572}
+.material-list{background:#f8fafb;border-color:#dce4e8;min-height:48px;padding:8px}
+.material-item{background:#e8f3ee;color:#125543;border-radius:6px;font-size:12px;box-shadow:none;animation:none}
+.btn-submit,.btn-copiar{background:#176b59;border:1px solid #176b59;border-radius:8px;box-shadow:none;font:600 15px system-ui;letter-spacing:0;padding:14px;min-height:48px;color:#fff}
+.btn-submit:hover,.btn-copiar:hover,.btn-add:hover{transform:none;box-shadow:none;filter:brightness(.96)}
+.relatorio-gerado{border-top:1px solid #dce4e8;padding-top:24px}
+.relatorio-gerado textarea{background:#f8fafb;color:#172b3a;border-color:#cbd6dc}
+.user-header{background:#fff;border-bottom:1px solid #dce4e8;backdrop-filter:none;box-shadow:none;padding:12px 20px}
+.user-header-badge{background:#edf5f1;color:#176b59;border:1px solid #d1e3da;font-size:11px}
+.btn-logout{background:transparent;color:#526572;border:1px solid #dce4e8;border-radius:8px;min-height:40px}
+.btn-logout:hover{background:#f1f5f6}
+.error,.login-error{background:#fff4ec;color:#954414;border:1px solid #edc6a9;border-radius:8px;font-size:14px;line-height:1.5;box-shadow:none}
+.toast-info{background:#fff7e7;color:#76571b;border-color:#e5d4a9;font-size:13px;box-shadow:none}
+@media(max-width:520px){.container{padding:76px 12px 24px}.card{padding:20px 16px;border-radius:12px}.card-title{font-size:23px}.card-subtitle{margin-bottom:22px}.radio-label{font-size:11px;padding:12px 3px}.evidence-actions{flex-wrap:nowrap}.evidence-actions button{min-width:0;font-size:12px;padding:10px 6px}.checklist-section,.evidence-section{padding:12px}.user-header{padding:10px 16px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
