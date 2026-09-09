@@ -205,7 +205,7 @@ $('imagesForm').addEventListener('submit',async event=>{
   event.preventDefault(); if(!activeReportId) return;
   const files=Array.from($('imagesInput').files || []); if(!files.length){$('imagesStatus').textContent='Escolha ao menos uma imagem.';return;}
   const reportId=activeReportId; const button=$('saveImages'); button.disabled=true; $('imagesStatus').textContent='Salvando imagens...';
-  try { const form=new FormData(); files.forEach(file=>form.append('arquivos',file,file.name)); const result=await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens',{method:'POST',body:form}); if(reportId===activeReportId){$('imagesStatus').textContent=(result.salvas||files.length)+' imagem(ns) salva(s).';await openImages();} }
+  try { let salvas=0; for(const file of files) { if(file.size > 3*1024*1024) throw new Error('Escolha imagens de até 3 MB no painel.'); const form=new FormData(); form.append('arquivos',file,file.name); const result=await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens',{method:'POST',body:form}); salvas+=result.salvas||1; } if(reportId===activeReportId){$('imagesStatus').textContent=salvas+' imagem(ns) salva(s).';await openImages();} }
   catch(error){if(reportId===activeReportId)$('imagesStatus').textContent=error.message;}
   finally{button.disabled=false;}
 });
