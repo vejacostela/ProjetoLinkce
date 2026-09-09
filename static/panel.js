@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVersion = 0;
+let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVersion = 0, activeReportId = null;
 let activeFilters = {}, reportText = '';
 const PAGE_SIZE = 50;
 const dateFormat = new Intl.DateTimeFormat('pt-BR', {dateStyle:'short', timeStyle:'short', timeZone:'America/Sao_Paulo'});
@@ -29,14 +29,17 @@ function signedOut(message = '') {
   $('workspace').hidden = true; $('login').hidden = false;
   $('logout').hidden = true; $('managementButton').hidden = true;
   $('managementDialog').close(); clearBankPreview();
-  $('detail').close(); $('detailText').textContent = '';
+  $('detail').close(); $('imagesDialog').close(); $('detailText').textContent = ''; activeReportId = null;
   $('detailMeta').replaceChildren(); $('userForm').reset(); reportText = '';
   clearResults(); $('loginStatus').textContent = message;
 }
 async function api(path, options = {}) {
   const {data, error} = await client.auth.getSession();
   if (error || !data.session) { signedOut('Sua sessão expirou. Entre novamente.'); throw new Error('Sua sessão expirou.'); }
-  const response = await fetch(path,{...options,cache:'no-store',headers:{'Content-Type':'application/json',Authorization:`Bearer ${data.session.access_token}`}});
+  const headers = new Headers(options.headers || {});
+  if (!(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
+  headers.set('Authorization',`Bearer ${data.session.access_token}`);
+  const response = await fetch(path,{...options,cache:'no-store',headers});
   const body = await response.json().catch(() => null);
   if (response.status === 401) signedOut('Sua sessão expirou. Entre novamente.');
   if (response.status === 403) signedOut('Seu perfil não permite esta operação.');
@@ -118,8 +121,9 @@ function applyFilters() {
 }
 async function openReport(id) {
   const version = ++detailVersion;
+  activeReportId = id;
   reportText = ''; $('detailText').textContent = ''; $('detailMeta').replaceChildren();
-  $('copy').disabled = true; $('mapLink').hidden = true;
+  $('copy').disabled = true; $('images').disabled = true; $('mapLink').hidden = true;
   $('detailStatus').textContent = 'Carregando...'; if (!$('detail').open) $('detail').showModal();
   try {
     const r = await api('/api/relatorios/' + encodeURIComponent(id));
@@ -130,9 +134,26 @@ async function openReport(id) {
     reportText = r.relatorio_completo || '';
     $('detailText').textContent = reportText || 'Texto completo não disponível neste registro.';
     $('copy').disabled = !reportText;
+    $('images').disabled = false;
     if (hasLocation(r)) { $('mapLink').href = `https://www.openstreetmap.org/?mlat=${r.latitude}&mlon=${r.longitude}#map=17/${r.latitude}/${r.longitude}`; $('mapLink').hidden = false; }
     $('detailStatus').textContent = '';
   } catch(error) { if(version === detailVersion) $('detailStatus').textContent = error.message; }
+}
+async function openImages() {
+  if (!activeReportId) return;
+  const reportId = activeReportId; $('imagesGallery').replaceChildren(); $('imagesEmpty').hidden = true; $('imagesStatus').textContent = 'Carregando imagens...'; $('imagesInput').value = '';
+  if (!$('imagesDialog').open) $('imagesDialog').showModal();
+  try {
+    const data = await api('/api/relatorios/' + encodeURIComponent(reportId) + '/imagens');
+    if(reportId !== activeReportId || !Array.isArray(data.imagens)) return;
+    const fragment = document.createDocumentFragment();
+    for(const image of data.imagens) {
+      const link=document.createElement('a'); link.className='report-image'; link.href=image.url; link.target='_blank'; link.rel='noopener noreferrer'; link.download=image.nome || 'evidencia';
+      const photo=document.createElement('img'); photo.src=image.url; photo.alt=image.nome || 'Evidência do relatório'; photo.loading='lazy';
+      const label=document.createElement('span'); label.textContent=image.nome || 'Imagem'; link.append(photo,label); fragment.append(link);
+    }
+    $('imagesGallery').append(fragment); $('imagesEmpty').hidden = data.imagens.length !== 0; $('imagesStatus').textContent = data.imagens.length ? 'Clique em uma imagem para salvar.' : '';
+  } catch(error) { if(reportId === activeReportId) $('imagesStatus').textContent = error.message; }
 }
 $('filters').addEventListener('submit',e=>{e.preventDefault();applyFilters();});
 $('reset').addEventListener('click',()=>{defaultDates();applyFilters();});
@@ -179,6 +200,15 @@ $('passwordManagerForm').addEventListener('submit',async event=>{
 });
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(reportText);$('detailStatus').textContent='Relatório copiado.';}catch(_){$('detailStatus').textContent='Não foi possível copiar. Selecione o texto e copie manualmente.';}});
+$('images').addEventListener('click',openImages);
+$('imagesForm').addEventListener('submit',async event=>{
+  event.preventDefault(); if(!activeReportId) return;
+  const files=Array.from($('imagesInput').files || []); if(!files.length){$('imagesStatus').textContent='Escolha ao menos uma imagem.';return;}
+  const reportId=activeReportId; const button=$('saveImages'); button.disabled=true; $('imagesStatus').textContent='Salvando imagens...';
+  try { const form=new FormData(); files.forEach(file=>form.append('arquivos',file,file.name)); const result=await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens',{method:'POST',body:form}); if(reportId===activeReportId){$('imagesStatus').textContent=(result.salvas||files.length)+' imagem(ns) salva(s).';await openImages();} }
+  catch(error){if(reportId===activeReportId)$('imagesStatus').textContent=error.message;}
+  finally{button.disabled=false;}
+});
 $('loginForm').addEventListener('submit',async e=>{
   e.preventDefault(); $('loginButton').disabled=true; $('loginStatus').textContent='Entrando...';
   try {
@@ -244,4 +274,3 @@ $('bankDeleteForm').addEventListener('submit',async event=>{
   } catch(error) {if(userId===currentUser?.id)$('bankStatus').textContent=error.message+' Calcule uma nova prévia antes de repetir.';}
   finally {deletingBank=false;$('deleteBank').disabled=false;$('previewBank').disabled=false;$('keepDays').disabled=false;}
 });
-

@@ -710,6 +710,7 @@ border-radius: 10px;
 ::-webkit-scrollbar-thumb:hover {
 background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
 }
+.evidence-section{padding:16px;border:1px solid rgba(94,234,212,.22);border-radius:12px;background:rgba(15,23,42,.38)}.evidence-actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.evidence-actions button{flex:1;min-width:150px}.evidence-input{display:none}.evidence-preview{display:flex;gap:10px;overflow-x:auto;padding:4px 0;min-height:4px}.evidence-item{position:relative;flex:0 0 96px;height:96px;border-radius:10px;overflow:hidden;border:1px solid var(--border-color);background:#111827}.evidence-item img{width:100%;height:100%;object-fit:cover}.evidence-remove{position:absolute;top:4px;right:4px;width:26px;height:26px;min-height:26px;padding:0;border-radius:50%;background:#172033e8;border-color:#64748b;color:#fff;font-size:18px;line-height:1}.evidence-help{font-size:12px;color:var(--text-secondary);margin:4px 0 0}
 </style>
 </head>
 <body>
@@ -788,6 +789,15 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <div class="form-group">
 <label>📌 Observações </label>
 <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais sobre o equipamento..."></textarea>
+</div>
+
+<div class="form-group evidence-section">
+<label>📷 Evidências do atendimento</label>
+<p class="evidence-help">Adicione até 30 fotos. Cada imagem pode ter até 8 MB.</p>
+<div class="evidence-actions"><button type="button" id="btnCamera">📸 Tirar foto</button><button type="button" id="btnGaleria">🖼️ Adicionar da galeria</button></div>
+<input id="fotoCamera" class="evidence-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" capture="environment">
+<input id="fotoGaleria" class="evidence-input" type="file" accept="image/jpeg,image/png,image/webp,image/avif" multiple>
+<div id="evidencePreview" class="evidence-preview" aria-live="polite"></div>
 </div>
 
 <!-- CHECKLIST SECTION -->
@@ -925,6 +935,47 @@ let materiaisUtilizados = []; // [{nome, qty, serial}]
 let materiaisRecolhidos = []; // [{nome, qty, serial}]
 let selectedMaterial = { utilizados: null, recolhidos: null };
 let _initialized = false;
+let evidenceFiles = [];
+const MAX_EVIDENCE_FILES = 30;
+const MAX_EVIDENCE_SIZE = 8 * 1024 * 1024;
+const EVIDENCE_TYPES = new Set(['image/jpeg','image/png','image/webp','image/avif']);
+
+function renderEvidenceFiles() {
+  const preview = document.getElementById('evidencePreview');
+  if (!preview) return;
+  preview.replaceChildren();
+  evidenceFiles.forEach(function(item, index) {
+    const card = document.createElement('div'); card.className = 'evidence-item';
+    const image = document.createElement('img'); image.src = item.url; image.alt = 'Evidência ' + (index + 1);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'evidence-remove'; remove.textContent = '×'; remove.setAttribute('aria-label','Remover foto ' + (index + 1));
+    remove.addEventListener('click', function() { URL.revokeObjectURL(item.url); evidenceFiles.splice(index, 1); renderEvidenceFiles(); });
+    card.append(image, remove); preview.append(card);
+  });
+}
+
+function addEvidenceFiles(files) {
+  const accepted = [];
+  for (const file of files) {
+    if (!EVIDENCE_TYPES.has(file.type) || file.size > MAX_EVIDENCE_SIZE || file.size === 0) continue;
+    if (evidenceFiles.length + accepted.length >= MAX_EVIDENCE_FILES) break;
+    accepted.push({file: file, url: URL.createObjectURL(file)});
+  }
+  evidenceFiles.push(...accepted); renderEvidenceFiles();
+  if (accepted.length !== files.length) mostrarToastSistema('Algumas fotos não foram adicionadas. Use JPG, PNG, WEBP ou AVIF de até 8 MB.');
+}
+
+function clearEvidenceFiles() {
+  evidenceFiles.forEach(item => URL.revokeObjectURL(item.url)); evidenceFiles = []; renderEvidenceFiles();
+}
+
+async function uploadEvidenceFiles(relatorioId) {
+  if (!evidenceFiles.length) return {salvas: 0};
+  const payload = new FormData(); evidenceFiles.forEach(item => payload.append('arquivos', item.file, item.file.name));
+  const response = await apiFetch('/api/relatorios/' + encodeURIComponent(relatorioId) + '/imagens', {method:'POST', body:payload});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || 'Não foi possível enviar as fotos.');
+  clearEvidenceFiles(); return data;
+}
 
 // === AUTH ===
 let sbClient = null;
@@ -1349,6 +1400,14 @@ console.error("Formulário não encontrado!");
 return;
 }
 
+document.getElementById('btnCamera').addEventListener('click', () => document.getElementById('fotoCamera').click());
+document.getElementById('btnGaleria').addEventListener('click', () => document.getElementById('fotoGaleria').click());
+['fotoCamera','fotoGaleria'].forEach(function(id) {
+  document.getElementById(id).addEventListener('change', function(event) {
+    addEvidenceFiles(Array.from(event.target.files || [])); event.target.value = '';
+  });
+});
+
 let ultimoSnapshot = null;
 let ultimoRelatorio = null;
 
@@ -1413,7 +1472,7 @@ throw new Error("Erro na resposta do servidor: " + response.status);
 }
 return response.json();
 })
-.then(function(result) {
+.then(async function(result) {
 if (result.relatorio && (result.salvo === true || result.offline === true)) {
 ultimoSnapshot = snapshotAtual;
 ultimoRelatorio = result.relatorio;
@@ -1424,6 +1483,13 @@ if (result.offline) {
 pedirContagemFila();
 } else {
 limparRascunho();
+try {
+  const fotos = await uploadEvidenceFiles(result.id);
+  if (fotos.salvas) mostrarToastSistema(fotos.salvas + ' foto(s) anexada(s) ao relatório.');
+} catch (fotoErro) {
+  erroDiv.textContent = '⚠️ Relatório salvo, mas as fotos ainda não foram enviadas: ' + fotoErro.message;
+  erroDiv.style.display = 'block';
+}
 }
 } else {
 throw new Error(result.error || "Erro desconhecido");
@@ -1472,6 +1538,7 @@ document.getElementById('listUtilizados').innerHTML = '';
 document.getElementById('listRecolhidos').innerHTML = '';
 document.getElementById('materiais_utilizados').value = '';
 document.getElementById('materiais_recolhidos').value = '';
+clearEvidenceFiles();
 container.style.display = "none";
 textarea.value = "";
 ultimoSnapshot = null;
@@ -1596,4 +1663,3 @@ initAuth();
 </script>
 </body>
 </html>
-

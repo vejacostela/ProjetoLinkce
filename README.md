@@ -41,3 +41,9 @@ Código do coletor originalmente importado do commit 51a92b5ba800626024a282f0d7e
 O botão **Senhas e histórico** permite ao gestor informar o email, uma nova senha e um motivo opcional. A senha anterior é substituída e o painel registra data, gestor, usuário e motivo — nunca a senha.
 
 Antes de usar esta função, execute no SQL Editor do mesmo projeto Supabase o arquivo [`supabase/20260909_historico_redefinicao_senhas.sql`](supabase/20260909_historico_redefinicao_senhas.sql). Apenas gestores autenticados podem consultar o histórico ou redefinir senhas.
+
+### Evidências por imagem
+
+O técnico pode tirar fotos pela câmera ou escolher imagens da galeria antes de gerar o relatório. Elas aparecem em miniaturas e são enviadas depois que o relatório é salvo. No painel, **Imagens** abre a galeria privada do relatório e permite anexar fotos complementares.
+
+Execute uma vez no Supabase o arquivo [`supabase/20260909_evidencias_relatorios.sql`](supabase/20260909_evidencias_relatorios.sql). Ele cria o bucket privado `relatorio-evidencias` e a tabela de vínculo das imagens.

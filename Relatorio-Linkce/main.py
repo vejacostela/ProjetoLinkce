@@ -3,7 +3,8 @@ import re
 import json
 import logging
 from datetime import date, time, datetime, timedelta, timezone
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query
+from uuid import UUID, uuid4
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, UploadFile, File
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,7 +42,8 @@ async def enforce_access(request, call_next):
             if path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
                 if role != "gestor":
                     raise HTTPException(403, "Acesso exclusivo do gestor.")
-            elif path.startswith("/api/relatorios") and role not in ("gestor", "apoio"):
+            elif (path.startswith("/api/relatorios") and not (path.endswith("/imagens") and request.method == "POST")
+                  and role not in ("gestor", "apoio")):
                 raise HTTPException(403, "Acesso não autorizado.")
             request.state.user = user
         except HTTPException as exc:
@@ -98,6 +100,13 @@ def init_supabase():
         logger.error(f"❌ Erro ao conectar ao Supabase: {e}")
 
 COLUNAS_EXTRAS = {"latitude", "longitude", "user_id", "endereco"}
+EVIDENCIAS_BUCKET = "relatorio-evidencias"
+MAX_IMAGENS_POR_ENVIO = 10
+MAX_IMAGENS_POR_RELATORIO = 30
+MAX_TAMANHO_IMAGEM = 8 * 1024 * 1024
+TIPOS_IMAGEM = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif"
+}
 
 def salvar_relatorio(dados: dict):
     if not supabase_client:
@@ -508,6 +517,101 @@ async def get_relatorio(relatorio_id: str):
     except Exception as e:
         raise HTTPException(status_code=404, detail="Relatório não encontrado")
 
+
+def _buscar_relatorio_evidencia(relatorio_id: UUID):
+    if not supabase_client:
+        raise HTTPException(503, "Banco de dados não configurado.")
+    try:
+        result = supabase_client.table("relatorios").select("id,user_id").eq("id", str(relatorio_id)).single().execute()
+        if not result.data:
+            raise HTTPException(404, "Relatório não encontrado.")
+        return result.data
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(404, "Relatório não encontrado.")
+
+
+def _url_assinada_evidencia(path: str):
+    try:
+        result = supabase_client.storage.from_(EVIDENCIAS_BUCKET).create_signed_url(path, 3600)
+        data = getattr(result, "data", result)
+        url = data.get("signedURL") or data.get("signed_url")
+        if not url:
+            raise ValueError("URL de imagem ausente")
+        return url
+    except Exception:
+        logger.exception("Falha ao assinar URL de evidência")
+        raise HTTPException(503, "Não foi possível abrir as imagens agora.")
+
+
+@app.get("/api/relatorios/{relatorio_id}/imagens")
+async def listar_imagens_relatorio(relatorio_id: UUID):
+    _buscar_relatorio_evidencia(relatorio_id)
+    try:
+        result = supabase_client.table("relatorio_imagens").select(
+            "id,criado_em,nome_original,tipo,tamanho_bytes,caminho"
+        ).eq("relatorio_id", str(relatorio_id)).order("criado_em").execute()
+        imagens = []
+        for imagem in result.data or []:
+            imagens.append({
+                "id": imagem["id"], "criado_em": imagem["criado_em"],
+                "nome": imagem["nome_original"], "tipo": imagem["tipo"],
+                "tamanho_bytes": imagem["tamanho_bytes"],
+                "url": _url_assinada_evidencia(imagem["caminho"]),
+            })
+        return {"imagens": imagens}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao listar evidências")
+        raise HTTPException(503, "Imagens indisponíveis. Execute a migração de evidências no Supabase.")
+
+
+@app.post("/api/relatorios/{relatorio_id}/imagens")
+async def adicionar_imagens_relatorio(relatorio_id: UUID, request: Request, arquivos: list[UploadFile] = File(...)):
+    relatorio = _buscar_relatorio_evidencia(relatorio_id)
+    role = role_of(request.state.user)
+    if role not in ("gestor", "apoio") and relatorio.get("user_id") != request.state.user.get("id"):
+        raise HTTPException(403, "Você só pode anexar imagens aos seus próprios relatórios.")
+    arquivos = [arquivo for arquivo in arquivos if arquivo and arquivo.filename]
+    if not arquivos or len(arquivos) > MAX_IMAGENS_POR_ENVIO:
+        raise HTTPException(422, f"Envie de 1 a {MAX_IMAGENS_POR_ENVIO} imagens por vez.")
+    try:
+        total = supabase_client.table("relatorio_imagens").select("id", count="exact", head=True).eq("relatorio_id", str(relatorio_id)).execute()
+        if (total.count or 0) + len(arquivos) > MAX_IMAGENS_POR_RELATORIO:
+            raise HTTPException(422, f"Cada relatório aceita até {MAX_IMAGENS_POR_RELATORIO} imagens.")
+        salvas = []
+        for arquivo in arquivos:
+            tipo = (arquivo.content_type or "").lower()
+            if tipo not in TIPOS_IMAGEM:
+                raise HTTPException(422, "Formato inválido. Use JPG, PNG, WEBP ou AVIF.")
+            conteudo = await arquivo.read()
+            if not conteudo or len(conteudo) > MAX_TAMANHO_IMAGEM:
+                raise HTTPException(422, "Cada imagem deve ter no máximo 8 MB.")
+            caminho = f"{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
+            supabase_client.storage.from_(EVIDENCIAS_BUCKET).upload(
+                caminho, conteudo, file_options={"content-type": tipo, "upsert": "false"}
+            )
+            try:
+                registro = supabase_client.table("relatorio_imagens").insert({
+                    "relatorio_id": str(relatorio_id), "caminho": caminho,
+                    "nome_original": os.path.basename(arquivo.filename)[:255],
+                    "tipo": tipo, "tamanho_bytes": len(conteudo),
+                    "enviado_por": request.state.user["id"],
+                }).execute()
+                salvas.append(registro.data[0])
+            except Exception:
+                supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([caminho])
+                raise
+        logger.info("%s evidência(s) anexada(s) ao relatório %s", len(salvas), relatorio_id)
+        return {"salvas": len(salvas)}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao salvar evidências")
+        raise HTTPException(503, "Não foi possível salvar as imagens. Tente novamente.")
+
 # === API BANCO ===
 @app.get("/api/banco/previa")
 async def previa_limpeza(manter_dias: int = Query(30, ge=1, le=36500)):
@@ -653,4 +757,3 @@ async def health_check():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
