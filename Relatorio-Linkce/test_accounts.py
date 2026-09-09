@@ -56,3 +56,45 @@ class AccountsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PasswordResetTests(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(main.app)
+
+    @staticmethod
+    async def gestor(request):
+        return {"id": "gestor-id", "email": "gestor@linkce.test", "app_metadata": {"role": "gestor"}}
+
+    def test_apoio_cannot_access_password_admin(self):
+        async def apoio(request): return {"id":"apoio", "email":"apoio@linkce.test", "app_metadata":{"role":"apoio"}}
+        with patch.object(main, "authenticate", apoio):
+            self.assertEqual(self.client.get("/api/seguranca/historico-senhas").status_code, 403)
+            self.assertEqual(self.client.post("/api/seguranca/redefinir-senha", json={}).status_code, 403)
+
+    def test_reset_updates_password_and_writes_audit_without_password(self):
+        audit = Mock()
+        audit.select.return_value.limit.return_value.execute.return_value = SimpleNamespace(data=[])
+        audit.insert.return_value.execute.return_value = SimpleNamespace(data=[{"id":"audit-id"}])
+        db = SimpleNamespace(table=Mock(return_value=audit))
+        target = SimpleNamespace(id="target-id", email="tecnico@linkce.test")
+        admin_api = SimpleNamespace(list_users=Mock(return_value=SimpleNamespace(users=[target])), update_user_by_id=Mock())
+        admin = SimpleNamespace(auth=SimpleNamespace(admin=admin_api))
+        with (patch.object(main, "authenticate", self.gestor), patch.object(main, "supabase_client", db),
+              patch.object(main, "_admin_client", return_value=admin)):
+            password = "Senha-forte-123"
+            response = self.client.post("/api/seguranca/redefinir-senha", json={"email":"TECNICO@linkce.test", "senha":password, "motivo":"Solicitação"})
+            self.assertEqual(response.status_code, 200)
+            admin_api.update_user_by_id.assert_called_once_with("target-id", {"password": password})
+            saved = audit.insert.call_args.args[0]
+            self.assertEqual(saved["usuario_email"], "tecnico@linkce.test")
+            self.assertEqual(saved["gestor_email"], "gestor@linkce.test")
+            self.assertNotIn("senha", saved)
+            self.assertNotIn(password, str(saved))
+
+    def test_reset_rejects_short_password_before_admin_call(self):
+        with (patch.object(main, "authenticate", self.gestor), patch.object(main, "supabase_client", Mock()),
+              patch.object(main, "_admin_client") as admin):
+            response = self.client.post("/api/seguranca/redefinir-senha", json={"email":"a@b.test", "senha":"curta"})
+            self.assertEqual(response.status_code, 422)
+            admin.assert_not_called()

@@ -35,3 +35,9 @@ Dentro de Relatorio-Linkce: `python -m unittest -v test_security test_accounts t
 Os testes usam banco e identidade simulados. Validar acesso, geração, gravação, localização, consulta e recuperação por email no ambiente configurado. Não executar exclusões reais como teste.
 
 Código do coletor originalmente importado do commit 51a92b5ba800626024a282f0d7edb247c32cfbeb de vejacostela/Relatorio-Linkce. Novas alterações devem ocorrer neste repositório unificado.
+
+### Redefinição de senhas pelo gestor
+
+O botão **Senhas e histórico** permite ao gestor informar o email, uma nova senha e um motivo opcional. A senha anterior é substituída e o painel registra data, gestor, usuário e motivo — nunca a senha.
+
+Antes de usar esta função, execute no SQL Editor do mesmo projeto Supabase o arquivo [`supabase/20260909_historico_redefinicao_senhas.sql`](supabase/20260909_historico_redefinicao_senhas.sql). Apenas gestores autenticados podem consultar o histórico ou redefinir senhas.

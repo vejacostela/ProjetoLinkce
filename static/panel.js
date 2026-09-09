@@ -27,8 +27,8 @@ function clearResults() {
 function signedOut(message = '') {
   currentUser = null; requestVersion++; detailVersion++;
   $('workspace').hidden = true; $('login').hidden = false;
-  $('logout').hidden = true; $('newUser').hidden = true;
-  $('bankButton').hidden = true; $('bankDialog').close(); clearBankPreview();
+  $('logout').hidden = true; $('newUser').hidden = true; $('passwordManager').hidden = true;
+  $('bankButton').hidden = true; $('bankDialog').close(); $('passwordDialog').close(); clearBankPreview();
   $('detail').close(); $('userDialog').close(); $('detailText').textContent = '';
   $('detailMeta').replaceChildren(); $('userForm').reset(); reportText = '';
   clearResults(); $('loginStatus').textContent = message;
@@ -106,7 +106,7 @@ async function enter(user) {
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
   currentUser = user; $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('newUser').hidden = role !== 'gestor';
-  $('bankButton').hidden = role !== 'gestor';
+  $('passwordManager').hidden = role !== 'gestor'; $('bankButton').hidden = role !== 'gestor';
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
   initMap(); defaultDates(); applyFilters();
@@ -142,6 +142,36 @@ $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-PAGE_SIZE);
 $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
 $('newUser').addEventListener('click',()=>{if(currentUser?.app_metadata?.role==='gestor'){$('userStatus').textContent='';$('userDialog').showModal();}});
+$('passwordManager').addEventListener('click',async()=>{
+  if(currentUser?.app_metadata?.role !== 'gestor') return;
+  $('passwordManagerForm').reset(); $('passwordStatus').textContent = ''; $('passwordHistory').replaceChildren(); $('passwordHistoryEmpty').hidden = true;
+  $('passwordDialog').showModal(); await loadPasswordHistory();
+});
+async function loadPasswordHistory() {
+  const userId = currentUser?.id; $('passwordHistory').replaceChildren(); $('passwordHistoryEmpty').hidden = true;
+  try {
+    const data = await api('/api/seguranca/historico-senhas?limite=30');
+    if(userId !== currentUser?.id || !Array.isArray(data.historico)) return;
+    const fragment = document.createDocumentFragment();
+    for(const item of data.historico) {
+      const tr=document.createElement('tr');
+      for(const value of [dateLabel(item.criado_em),item.gestor_email,item.usuario_email,item.motivo || '—']) cell(tr,value || '—');
+      fragment.append(tr);
+    }
+    $('passwordHistory').append(fragment); $('passwordHistoryEmpty').hidden = data.historico.length !== 0;
+  } catch(error) { if(userId === currentUser?.id) $('passwordStatus').textContent = error.message; }
+}
+$('passwordManagerForm').addEventListener('submit',async event=>{
+  event.preventDefault(); if(currentUser?.app_metadata?.role !== 'gestor') return;
+  const userId=currentUser.id; const button=$('savePassword'); button.disabled=true; $('passwordStatus').textContent='Redefinindo senha...';
+  try {
+    const result=await api('/api/seguranca/redefinir-senha',{method:'POST',body:JSON.stringify({email:$('resetEmail').value.trim(),senha:$('resetPassword').value,motivo:$('resetReason').value.trim()})});
+    if(userId !== currentUser?.id) return;
+    $('resetPassword').value=''; $('passwordStatus').textContent=result.mensagem || 'Senha redefinida e registrada.';
+    await loadPasswordHistory();
+  } catch(error) {if(userId===currentUser?.id)$('passwordStatus').textContent=error.message;}
+  finally {button.disabled=false;}
+});
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(reportText);$('detailStatus').textContent='Relatório copiado.';}catch(_){$('detailStatus').textContent='Não foi possível copiar. Selecione o texto e copie manualmente.';}});
 $('loginForm').addEventListener('submit',async e=>{

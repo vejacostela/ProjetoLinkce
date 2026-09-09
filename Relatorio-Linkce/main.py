@@ -38,7 +38,7 @@ async def enforce_access(request, call_next):
         try:
             user = await authenticate(request)
             role = role_of(user)
-            if path == "/api/criar-usuario" or path.startswith("/api/banco/"):
+            if path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
                 if role != "gestor":
                     raise HTTPException(403, "Acesso exclusivo do gestor.")
             elif path.startswith("/api/relatorios") and role not in ("gestor", "apoio"):
@@ -423,6 +423,80 @@ async def criar_usuario(request: Request):
             raise HTTPException(422, "A senha não atende às regras de segurança do provedor.")
         logger.error("Falha no cadastro: %s", type(e).__name__)
         raise HTTPException(status_code=503, detail="Cadastro não confirmado. Confira a lista de usuários antes de tentar novamente.")
+
+def _admin_client():
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        raise HTTPException(status_code=503, detail="Serviço de usuários não configurado no servidor.")
+    try:
+        from supabase import create_client
+        return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    except Exception:
+        logger.exception("Falha ao iniciar o serviço administrativo de usuários")
+        raise HTTPException(status_code=503, detail="Serviço de usuários indisponível. Tente novamente.")
+
+def _find_user_by_email(admin, email: str):
+    try:
+        users_result = admin.auth.admin.list_users(page=1, per_page=1000)
+        users = getattr(users_result, "users", users_result)
+        for user in users or []:
+            if getattr(user, "email", "").lower() == email.lower():
+                return user
+    except Exception:
+        logger.exception("Falha ao consultar usuários para redefinição de senha")
+        raise HTTPException(status_code=503, detail="Não foi possível consultar os usuários cadastrados.")
+    raise HTTPException(status_code=404, detail="Nenhuma conta cadastrada com este email.")
+
+@app.get("/api/seguranca/historico-senhas")
+async def historico_senhas(limite: int = Query(30, ge=1, le=100)):
+    if not supabase_client:
+        raise HTTPException(status_code=503, detail="Banco de dados não configurado.")
+    try:
+        result = supabase_client.table("historico_redefinicao_senhas").select(
+            "id,criado_em,gestor_email,usuario_email,motivo"
+        ).order("criado_em", desc=True).limit(limite).execute()
+        return JSONResponse(content={"historico": result.data or []})
+    except Exception:
+        logger.exception("Falha ao consultar histórico de senhas")
+        raise HTTPException(status_code=503, detail="Histórico indisponível. Execute a migração de segurança no Supabase.")
+
+@app.post("/api/seguranca/redefinir-senha")
+async def redefinir_senha(request: Request):
+    try:
+        data = await request.json()
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=422, detail="Dados de redefinição inválidos.")
+        email = data.get("email", "").strip().lower() if isinstance(data.get("email"), str) else ""
+        senha = data.get("senha", "") if isinstance(data.get("senha"), str) else ""
+        motivo = data.get("motivo", "").strip() if isinstance(data.get("motivo", ""), str) else ""
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+            raise HTTPException(status_code=422, detail="Informe um email válido.")
+        if not 12 <= len(senha) <= 128:
+            raise HTTPException(status_code=422, detail="A senha deve conter de 12 a 128 caracteres.")
+        if len(motivo) > 300:
+            raise HTTPException(status_code=422, detail="O motivo pode ter até 300 caracteres.")
+        if not supabase_client:
+            raise HTTPException(status_code=503, detail="Banco de dados não configurado.")
+
+        # Validate the audit table before changing credentials: every manager action must be auditable.
+        supabase_client.table("historico_redefinicao_senhas").select("id", head=True).limit(1).execute()
+        admin = _admin_client()
+        target = _find_user_by_email(admin, email)
+        actor = request.state.user
+        actor_email = actor.get("email", "")
+        if not actor_email:
+            raise HTTPException(status_code=401, detail="Sessão sem email válido.")
+        admin.auth.admin.update_user_by_id(target.id, {"password": senha})
+        supabase_client.table("historico_redefinicao_senhas").insert({
+            "gestor_id": actor["id"], "gestor_email": actor_email.lower(),
+            "usuario_id": target.id, "usuario_email": email, "motivo": motivo or None,
+        }).execute()
+        logger.info("Senha redefinida por gestor; auditoria registrada")
+        return JSONResponse(content={"mensagem": "Senha redefinida e registrada no histórico.", "email": email})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha na redefinição de senha pelo gestor")
+        raise HTTPException(status_code=503, detail="Não foi possível redefinir a senha. Tente novamente.")
 
 @app.get("/api/relatorios/{relatorio_id}")
 async def get_relatorio(relatorio_id: str):
