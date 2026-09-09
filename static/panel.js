@@ -108,7 +108,8 @@ async function enter(user) {
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
   currentUser = user; $('login').hidden = true; $('workspace').hidden = false;
-  $('logout').hidden = false; $('managementButton').hidden = role !== 'gestor';
+  $('logout').hidden = false; $('managementButton').hidden = false;
+  document.querySelectorAll('[data-management-target]').forEach(b => b.hidden = role !== 'gestor');
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
   initMap(); defaultDates(); applyFilters();
@@ -162,12 +163,13 @@ $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-PAGE_SIZE);
 $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
 function showManagement(section = '') {
+  document.getElementById('noticePanel')?.setAttribute('hidden','');
   const sections = {user:'managementUser', password:'managementPassword', bank:'managementBank'};
   $('managementHome').hidden = Boolean(section);
   Object.values(sections).forEach(id => $(id).hidden = sections[section] !== id);
 }
 $('managementButton').addEventListener('click',()=>{
-  if(currentUser?.app_metadata?.role !== 'gestor') return;
+  if(!['gestor','apoio'].includes(currentUser?.app_metadata?.role)) return;
   showManagement(); $('managementDialog').showModal();
 });
 document.querySelectorAll('[data-management-target]').forEach(button=>button.addEventListener('click',async()=>{

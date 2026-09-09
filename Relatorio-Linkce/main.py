@@ -39,6 +39,11 @@ async def enforce_access(request, call_next):
         try:
             user = await authenticate(request)
             role = role_of(user)
+            if path.startswith('/api/avisos') and request.method != 'GET' and role not in ('gestor', 'apoio'):
+                raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+            if path == '/gerar_relatorio' or (path.endswith('/imagens') and request.method == 'POST'):
+                if estado_aviso().get('bloqueado'):
+                    raise HTTPException(423, 'Área técnica bloqueada. Consulte o aviso importante.')
             if path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
                 if role != "gestor":
                     raise HTTPException(403, "Acesso exclusivo do gestor.")
@@ -54,6 +59,43 @@ async def enforce_access(request, call_next):
     return response
 
 # === WHATSAPP ===
+def estado_aviso():
+    if not supabase_client:
+        raise HTTPException(503, 'Não foi possível verificar os avisos. Tente novamente.')
+    try:
+        result = supabase_client.table('avisos_operacao').select('*').eq('id', 1).execute()
+        return result.data[0] if result.data else {'mensagem': '', 'bloqueado': False}
+    except Exception as exc:
+        if getattr(exc, 'code', '') in ('PGRST205', '42P01'):
+            return {'mensagem': '', 'bloqueado': False, 'configurado': False}
+        raise HTTPException(503, 'Central de avisos indisponível. Verifique a migração no Supabase.')
+
+@app.get('/api/avisos')
+async def obter_aviso():
+    return estado_aviso()
+
+@app.put('/api/avisos')
+async def salvar_aviso(request: Request):
+    try:
+        data = await request.json()
+        mensagem = data.get('mensagem', '')
+        bloqueado = data.get('bloqueado')
+        if not isinstance(mensagem, str) or len(mensagem) > 3000 or type(bloqueado) is not bool:
+            raise ValueError()
+        if bloqueado and not mensagem.strip():
+            raise ValueError()
+    except (ValueError, AttributeError):
+        raise HTTPException(422, 'Informe uma mensagem de até 3000 caracteres. Bloqueios exigem uma mensagem.')
+    if not supabase_client:
+        raise HTTPException(503, 'Banco indisponível.')
+    try:
+        supabase_client.table('avisos_operacao').upsert({'id': 1, 'mensagem': mensagem.strip(),
+            'bloqueado': bloqueado, 'atualizado_por': request.state.user['id'],
+            'atualizado_em': datetime.now(timezone.utc).isoformat()}).execute()
+        return {'mensagem': 'Aviso atualizado.'}
+    except Exception:
+        raise HTTPException(503, 'Não foi possível salvar o aviso.')
+
 WHATSAPP_SERVICE_URL = os.environ.get("WHATSAPP_SERVICE_URL", "")
 WHATSAPP_SECRET      = os.environ.get("WHATSAPP_SECRET", "")
 
