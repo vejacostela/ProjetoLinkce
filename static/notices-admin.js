@@ -1,20 +1,12 @@
 'use strict';
-const noticeButton=document.createElement('button');
-noticeButton.type='button'; noticeButton.textContent='Central de avisos';
-document.querySelector('.management-cards').append(noticeButton);
-const noticePanel=document.createElement('section'); noticePanel.id='noticePanel';noticePanel.hidden=true;
-noticePanel.innerHTML='<button type="button" id="noticeBack">← Voltar</button><h3>Central de avisos</h3><p>Mensagem para todos que acessam a área técnica. O bloqueio impede novos envios até a liberação.</p><form id="noticeForm"><label>Mensagem<textarea id="noticeText" maxlength="3000" rows="5" style="width:100%;font:inherit"></textarea></label><label><input id="noticeLock" type="checkbox"> Bloquear área técnica</label><button id="noticeSave" class="primary">Publicar / atualizar</button><button type="button" id="noticeRelease">Liberar área técnica</button></form><p id="noticeStatus" role="status"></p>';
-document.getElementById('managementDialog').append(noticePanel);
-document.getElementById('noticeBack').onclick=()=>showManagement();
-noticeButton.onclick=async()=>{
- showManagement();$('managementHome').hidden=true;noticePanel.hidden=false;$('noticeSave').disabled=true;$('noticeRelease').disabled=true;
- try{const d=await api('/api/avisos');$('noticeText').value=d.mensagem;$('noticeLock').checked=d.bloqueado;$('noticeStatus').textContent=d.bloqueado?'Área técnica bloqueada.':'Área técnica liberada.';$('noticeSave').disabled=false;$('noticeRelease').disabled=false;}
- catch(e){$('noticeStatus').textContent=e.message;}
-};
-async function publishNotice(release=false){
- $('noticeSave').disabled=true;$('noticeRelease').disabled=true;
- try{await api('/api/avisos',{method:'PUT',body:JSON.stringify({mensagem:$('noticeText').value,bloqueado:release?false:$('noticeLock').checked})});if(release)$('noticeLock').checked=false;$('noticeStatus').textContent='Publicado. A área técnica será atualizada em até 15 segundos quando estiver conectada.';}
- catch(e){$('noticeStatus').textContent=e.message;}
- finally{$('noticeSave').disabled=false;$('noticeRelease').disabled=false;}
-}
-$('noticeForm').onsubmit=e=>{e.preventDefault();publishNotice();};$('noticeRelease').onclick=()=>publishNotice(true);
+const noticeButton=document.createElement('button');noticeButton.type='button';noticeButton.textContent='Central de avisos';document.querySelector('.management-cards').append(noticeButton);
+const noticePanel=document.createElement('section');noticePanel.id='noticePanel';noticePanel.hidden=true;
+noticePanel.innerHTML='<button type="button" id="noticeBack">← Voltar</button><h3>Central de avisos</h3><p>Escolha uma mensagem pronta, edite o texto ou crie uma nova.</p><label>Mensagens salvas<select id="noticePreset"><option value="">Nova mensagem personalizada</option></select></label><form id="noticeForm"><label>Mensagem<textarea id="noticeText" maxlength="3000" rows="4" required></textarea></label><label><input id="noticeLock" type="checkbox"> Bloquear área técnica</label><div><button id="noticeSave" class="primary">Salvar e publicar</button><button type="button" id="noticeRelease">Liberar área técnica</button><button type="button" id="noticeDelete">Excluir mensagem</button></div></form><p id="noticeStatus" role="status"></p>';
+document.getElementById('managementDialog').append(noticePanel);const n=id=>document.getElementById(id);let presets=[];
+function renderPresets(){const s=n('noticePreset');s.replaceChildren(new Option('Nova mensagem personalizada',''));presets.forEach(x=>s.append(new Option(x.titulo,x.id)));}
+async function loadNoticePanel(){try{const [active,list]=await Promise.all([api('/api/avisos'),api('/api/avisos/modelos')]);presets=list.modelos||[];renderPresets();n('noticeText').value=active.mensagem||'';n('noticeLock').checked=!!active.bloqueado;n('noticeStatus').textContent=active.bloqueado?'Área técnica bloqueada.':'Área técnica liberada.';}catch(e){n('noticeStatus').textContent=e.message;}}
+noticeButton.onclick=async()=>{showManagement();$('managementHome').hidden=true;noticePanel.hidden=false;await loadNoticePanel();};n('noticeBack').onclick=()=>{noticePanel.hidden=true;showManagement();};
+n('noticePreset').onchange=()=>{const item=presets.find(x=>String(x.id)===n('noticePreset').value);if(item)n('noticeText').value=item.mensagem;n('noticeDelete').disabled=!item;};
+async function publishNotice(release=false){try{await api('/api/avisos',{method:'PUT',body:JSON.stringify({mensagem:n('noticeText').value,bloqueado:release?false:n('noticeLock').checked})});n('noticeStatus').textContent=release?'Área técnica liberada.':'Aviso publicado.';}catch(e){n('noticeStatus').textContent=e.message;}}
+n('noticeForm').onsubmit=async e=>{e.preventDefault();const id=n('noticePreset').value;try{await api('/api/avisos/modelos',{method:'POST',body:JSON.stringify({id:id||null,titulo:id?(presets.find(x=>String(x.id)===id)?.titulo||'Mensagem'):'Mensagem personalizada',mensagem:n('noticeText').value})});await publishNotice();await loadNoticePanel();}catch(err){n('noticeStatus').textContent=err.message;}};n('noticeRelease').onclick=()=>publishNotice(true);
+n('noticeDelete').onclick=async()=>{const id=n('noticePreset').value;if(!id)return;try{await api('/api/avisos/modelos/'+id,{method:'DELETE'});await loadNoticePanel();}catch(e){n('noticeStatus').textContent=e.message;}};

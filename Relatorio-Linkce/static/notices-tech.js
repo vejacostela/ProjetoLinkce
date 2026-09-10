@@ -3,7 +3,6 @@ window.installNotices=(api,getUser)=>{
  box.innerHTML='<h2>Aviso importante</h2><p class="notice-body"></p><p class="notice-help"></p><button type="button">Entendi</button>';
  document.body.append(box);
  // Move the legacy toast out of the card stacking context.
- const toast=document.getElementById('infoToast');if(toast)document.body.append(toast);
  let locked=true,busy=false,seen='';const form=document.getElementById('mainApp');
  box.addEventListener('cancel',e=>{if(locked)e.preventDefault();});box.querySelector('button').onclick=()=>box.close();
  async function check(){
@@ -18,7 +17,7 @@ window.installNotices=(api,getUser)=>{
    const key=user.id+':'+d.atualizado_em;
    if(locked||(d.mensagem&&seen!==key)){if(!box.open)box.showModal();seen=key;}
    else if(wasLocked||!d.mensagem)box.close();
-  }catch(e){locked=true;form.inert=true;box.querySelector('.notice-body').textContent='Não foi possível verificar os avisos. Reconecte e aguarde. Seu formulário está preservado.';box.querySelector('button').hidden=true;if(!box.open)box.showModal();}
+  }catch(e){locked=false;form.inert=false;if(box.open)box.close();}
   finally{busy=false;}
  }
  setInterval(check,15000);window.addEventListener('online',check);document.addEventListener('visibilitychange',()=>{if(!document.hidden)check();});

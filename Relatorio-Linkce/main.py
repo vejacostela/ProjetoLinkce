@@ -70,9 +70,48 @@ def estado_aviso():
             return {'mensagem': '', 'bloqueado': False, 'configurado': False}
         raise HTTPException(503, 'Central de avisos indisponível. Verifique a migração no Supabase.')
 
+AVISOS_PADRAO = [
+    {'titulo': 'Bom dia de trabalho', 'mensagem': 'Bom dia de trabalho! A equipe está disponível para apoiar as rotas de hoje.'},
+    {'titulo': 'Atenção às evidências', 'mensagem': 'Atenção: siga o checklist, registre as evidências e confira os materiais antes de finalizar.'},
+    {'titulo': 'Manutenção do sistema', 'mensagem': 'Aviso: o sistema estará em manutenção. Aguarde a liberação antes de enviar relatórios.'},
+]
+
 @app.get('/api/avisos')
 async def obter_aviso():
     return estado_aviso()
+
+@app.get('/api/avisos/modelos')
+async def listar_modelos_aviso():
+    if not supabase_client:
+        return {'modelos': AVISOS_PADRAO}
+    try:
+        result = supabase_client.table('avisos_modelos').select('id,titulo,mensagem').order('criado_em').execute()
+        return {'modelos': result.data or AVISOS_PADRAO}
+    except Exception:
+        return {'modelos': AVISOS_PADRAO}
+
+@app.post('/api/avisos/modelos')
+async def salvar_modelo_aviso(request: Request):
+    try:
+        data = await request.json(); titulo = data.get('titulo', '').strip(); mensagem = data.get('mensagem', '').strip()
+        if not titulo or not mensagem or len(titulo) > 120 or len(mensagem) > 3000: raise ValueError()
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(422, 'Informe título e mensagem válidos.')
+    try:
+        payload = {'titulo': titulo, 'mensagem': mensagem, 'atualizado_por': request.state.user['id']}
+        if data.get('id'): payload['id'] = int(data['id'])
+        supabase_client.table('avisos_modelos').upsert(payload).execute()
+        return {'mensagem': 'Mensagem salva.'}
+    except Exception:
+        raise HTTPException(503, 'Não foi possível salvar a mensagem. Execute a migração de avisos.')
+
+@app.delete('/api/avisos/modelos/{modelo_id}')
+async def excluir_modelo_aviso(modelo_id: int):
+    try:
+        supabase_client.table('avisos_modelos').delete().eq('id', modelo_id).execute()
+        return {'mensagem': 'Mensagem excluída.'}
+    except Exception:
+        raise HTTPException(503, 'Não foi possível excluir a mensagem.')
 
 @app.put('/api/avisos')
 async def salvar_aviso(request: Request):
