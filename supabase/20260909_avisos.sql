@@ -21,6 +21,8 @@ create table if not exists public.avisos_modelos (
 alter table public.avisos_modelos enable row level security;
 revoke all on public.avisos_modelos from public,anon,authenticated;
 grant select,insert,update,delete on public.avisos_modelos to service_role;
+grant usage, select, update on sequence public.avisos_modelos_id_seq to service_role;
+grant usage on schema public to service_role;
 insert into public.avisos_modelos(titulo,mensagem) select * from (values
  ('Bom dia de trabalho','Bom dia de trabalho! A equipe está disponível para apoiar as rotas de hoje.'),
  ('Atenção às evidências','Atenção: siga o checklist, registre as evidências e confira os materiais antes de finalizar.'),
