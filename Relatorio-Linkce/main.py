@@ -509,10 +509,22 @@ async def listar_relatorios(
         if dias:
             query = query.gte("criado_em", (datetime.now(timezone.utc) - timedelta(days=dias)).isoformat())
         result = query.order("criado_em", desc=True).order("id", desc=True).range(offset, offset + limite - 1).execute()
-        total = result.count if result.count is not None else offset + len(result.data)
+        rows = result.data or []
+        image_counts = {}
+        try:
+            ids = [row.get('id') for row in rows if row.get('id')]
+            if ids:
+                image_rows = supabase_client.table('relatorio_imagens').select('relatorio_id').in_('relatorio_id', ids).execute().data or []
+                for image in image_rows:
+                    image_counts[image.get('relatorio_id')] = image_counts.get(image.get('relatorio_id'), 0) + 1
+        except Exception:
+            logger.info('Contagem de imagens indisponível; mantendo relatórios sem esse indicador.')
+        for row in rows:
+            row['imagens_count'] = image_counts.get(row.get('id'), 0)
+        total = result.count if result.count is not None else offset + len(rows)
         return JSONResponse(content={
-            "relatorios": result.data, "total": total, "offset": offset,
-            "limite": limite, "has_more": offset + len(result.data) < total,
+            "relatorios": rows, "total": total, "offset": offset,
+            "limite": limite, "has_more": offset + len(rows) < total,
         })
     except HTTPException:
         raise

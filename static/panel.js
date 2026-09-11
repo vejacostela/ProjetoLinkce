@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVersion = 0, activeReportId = null;
+let currentReports = [];
 let activeFilters = {}, reportText = '';
 const PAGE_SIZE = 50;
 const dateFormat = new Intl.DateTimeFormat('pt-BR', {dateStyle:'short', timeStyle:'short', timeZone:'America/Sao_Paulo'});
@@ -27,6 +28,7 @@ function clearResults() {
 }
 function signedOut(message = '') {
   currentUser = null; requestVersion++; detailVersion++;
+  currentReports = [];
   $('workspace').hidden = true; $('login').hidden = false;
   $('logout').hidden = true; $('managementButton').hidden = true;
   $('managementDialog').close(); clearBankPreview();
@@ -67,21 +69,39 @@ function centerMap() {
   map.fitBounds(markers.getBounds(), {padding:[35,35], maxZoom:15, animate:true});
 }
 function cell(row, text) { const td = document.createElement('td'); td.textContent = text; row.append(td); return td; }
+function reportComplete(report) {
+  return Boolean(report.equipamento_status && report.maior_sinal && hasLocation(report) && Number(report.imagens_count) > 0);
+}
+function filteredReports(reports) {
+  const location = $('locationFilter')?.value || '';
+  const photos = $('photosFilter')?.value || '';
+  return reports.filter(report => {
+    const hasLocationValue = hasLocation(report);
+    const hasPhotos = Number(report.imagens_count) > 0;
+    return (!location || (location === 'com' ? hasLocationValue : !hasLocationValue))
+      && (!photos || (photos === 'com' ? hasPhotos : !hasPhotos));
+  });
+}
 function render(data) {
   const reports = data.relatorios;
   if (!Array.isArray(reports) || !Number.isInteger(data.total) || typeof data.has_more !== 'boolean') throw new Error('Integração pendente: atualize a API de relatórios antes de usar este painel.');
+  currentReports = reports;
+  const visibleReports = filteredReports(reports);
   clearResults();
-  $('total').textContent = data.total;
-  $('located').textContent = reports.filter(hasLocation).length;
-  $('technicians').textContent = new Set(reports.map(r => r.user_id || r.tecnico)).size;
-  $('empty').hidden = reports.length !== 0;
-  $('pageLabel').textContent = reports.length ? `${offset + 1}–${offset + reports.length} de ${data.total}` : '0 resultados';
+  $('total').textContent = visibleReports.length + (visibleReports.length !== reports.length ? ` de ${data.total}` : '');
+  $('located').textContent = visibleReports.filter(hasLocation).length;
+  $('technicians').textContent = new Set(visibleReports.map(r => r.user_id || r.tecnico)).size;
+  $('empty').hidden = visibleReports.length !== 0;
+  $('pageLabel').textContent = visibleReports.length ? `${offset + 1}–${offset + visibleReports.length} de ${data.total}` : '0 resultados';
   $('previous').disabled = offset === 0; $('next').disabled = !data.has_more;
   const fragment = document.createDocumentFragment();
-  for (const r of reports) {
+  for (const r of visibleReports) {
     const tr = document.createElement('tr');
     cell(tr,dateLabel(r.criado_em)); cell(tr,r.tecnico); cell(tr,r.equipamento_status || 'Não informado');
     cell(tr,hasLocation(r) ? 'Disponível' : 'Não informada');
+    cell(tr,Number(r.imagens_count) > 0 ? `${r.imagens_count} imagem(ns)` : 'Nenhuma');
+    const completeness = cell(tr,reportComplete(r) ? 'Completo' : 'Revisar');
+    completeness.className = reportComplete(r) ? 'complete-cell' : 'incomplete-cell';
     const button = document.createElement('button'); button.textContent = 'Abrir';
     button.setAttribute('aria-label',`Abrir relatório de ${r.tecnico}`);
     button.addEventListener('click',() => openReport(r.id)); cell(tr,'').append(button); fragment.append(tr);
@@ -172,9 +192,24 @@ async function openImages() {
   } catch(error) { if(reportId === activeReportId) $('imagesStatus').textContent = error.message; }
 }
 $('filters').addEventListener('submit',e=>{e.preventDefault();applyFilters();});
+$('locationFilter').addEventListener('change',()=>{if(currentReports.length) render({relatorios:currentReports,total:currentReports.length,has_more:false});});
+$('photosFilter').addEventListener('change',()=>{if(currentReports.length) render({relatorios:currentReports,total:currentReports.length,has_more:false});});
 $('reset').addEventListener('click',()=>{defaultDates();applyFilters();});
 $('refresh').addEventListener('click',loadReports);
 $('centerMap')?.addEventListener('click', centerMap);
+function csvValue(value) { return `"${String(value ?? '').replaceAll('"','""')}"`; }
+function exportReports() {
+  const reports = filteredReports(currentReports);
+  if (!reports.length) { $('status').textContent = 'Nenhum relatório disponível para exportar.'; return; }
+  const lines = [
+    ['Data e hora','Técnico','Cabeamento','Localização','Fotos','Completude'].map(csvValue).join(';'),
+    ...reports.map(r => [dateLabel(r.criado_em),r.tecnico,r.equipamento_status || 'Não informado',hasLocation(r) ? `${r.latitude}, ${r.longitude}` : 'Não informada',Number(r.imagens_count) || 0,reportComplete(r) ? 'Completo' : 'Revisar'].map(csvValue).join(';'))
+  ];
+  const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `relatorios-linkce-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+}
+$('exportCsv').addEventListener('click', exportReports);
+$('printReports').addEventListener('click',()=>window.print());
 $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-PAGE_SIZE);loadReports();});
 $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
