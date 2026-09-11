@@ -196,7 +196,7 @@ async function salvarFotosOffline(requestId, files) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction('fotos', 'readwrite');
     const store = tx.objectStore('fotos');
-    files.forEach(file => store.add({request_id: requestId, nome: file.name, tipo: file.type, blob: file}));
+    files.forEach(file => store.add({request_id: requestId, nome: file.name || 'evidencia.jpg', tipo: file.type || file.blob?.type || 'image/jpeg', blob: file.blob || file}));
     tx.oncomplete = resolve; tx.onerror = e => reject(e.target.error);
   });
 }
