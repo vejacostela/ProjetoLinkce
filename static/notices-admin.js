@@ -43,7 +43,12 @@ noticePanel.innerHTML = `
       <button type="button" id="noticeDelete" disabled>Excluir mensagem</button>
     </div>
     <p id="noticeStatus" role="status" aria-live="polite"></p>
-  </form>`;
+  </form>
+  <section class="notice-history" aria-labelledby="noticeHistoryTitle">
+    <div class="notice-history-head"><h4 id="noticeHistoryTitle">Histórico recente</h4><button type="button" id="noticeHistoryRefresh">Atualizar</button></div>
+    <div id="noticeHistoryList" class="notice-history-list"></div>
+    <p id="noticeHistoryEmpty" class="muted">Nenhuma ação registrada ainda.</p>
+  </section>`;
 
 document.getElementById('managementDialog').append(noticePanel);
 const n = id => document.getElementById(id);
@@ -61,6 +66,44 @@ function selectPreset(item) {
   n('noticeDelete').disabled = !item;
 }
 
+const historyLabels = {
+  mensagem_criada: 'Mensagem criada',
+  mensagem_atualizada: 'Mensagem editada',
+  mensagem_excluida: 'Mensagem excluída',
+  publicado: 'Aviso publicado',
+  bloqueado: 'Área técnica bloqueada',
+  liberado: 'Área técnica liberada'
+};
+
+function renderHistory(items) {
+  const list = n('noticeHistoryList');
+  const empty = n('noticeHistoryEmpty');
+  list.replaceChildren();
+  empty.hidden = items.length !== 0;
+  const fragment = document.createDocumentFragment();
+  items.forEach(item => {
+    const entry = document.createElement('article');
+    entry.className = 'notice-history-item';
+    const title = document.createElement('strong');
+    title.textContent = historyLabels[item.acao] || 'Ação realizada';
+    const details = document.createElement('span');
+    const when = item.criado_em ? new Date(item.criado_em).toLocaleString('pt-BR', {dateStyle:'short', timeStyle:'short'}) : 'Data indisponível';
+    details.textContent = `${item.titulo || 'Aviso atual'} · ${item.usuario_email || 'Usuário da gestão'} · ${when}`;
+    entry.append(title, details);
+    fragment.append(entry);
+  });
+  list.append(fragment);
+}
+
+async function loadNoticeHistory() {
+  try {
+    const data = await api('/api/avisos/historico?limite=30');
+    renderHistory(Array.isArray(data.historico) ? data.historico : []);
+  } catch (_) {
+    renderHistory([]);
+  }
+}
+
 async function loadNoticePanel() {
   try {
     const [active, list] = await Promise.all([api('/api/avisos'), api('/api/avisos/modelos')]);
@@ -72,6 +115,7 @@ async function loadNoticePanel() {
     if (!activePreset) n('noticeText').value = active.mensagem || '';
     n('noticeLock').checked = Boolean(active.bloqueado);
     n('noticeStatus').textContent = active.bloqueado ? 'Área técnica bloqueada.' : 'Área técnica liberada.';
+    await loadNoticeHistory();
   } catch (error) {
     n('noticeStatus').textContent = error.message;
   }
@@ -94,13 +138,16 @@ n('noticePreset').addEventListener('change', () => {
   selectPreset(item);
 });
 
+n('noticeHistoryRefresh').addEventListener('click', loadNoticeHistory);
+
 async function publishNotice(release = false) {
   try {
     await api('/api/avisos', {
       method: 'PUT',
       body: JSON.stringify({
         mensagem: n('noticeText').value.trim(),
-        bloqueado: release ? false : n('noticeLock').checked
+        bloqueado: release ? false : n('noticeLock').checked,
+        acao: release ? 'liberado' : (n('noticeLock').checked ? 'bloqueado' : 'publicado')
       })
     });
     n('noticeStatus').textContent = release ? 'Área técnica liberada.' : 'Aviso publicado.';
@@ -146,6 +193,9 @@ n('noticeRelease').addEventListener('click', async () => {
 n('noticeDelete').addEventListener('click', async () => {
   const id = n('noticePreset').value;
   if (!id) return;
+  const item = presets.find(value => String(value.id) === id);
+  const label = item?.titulo || 'esta mensagem';
+  if (!window.confirm(`Excluir "${label}"? Esta ação não pode ser desfeita.`)) return;
   n('noticeDelete').disabled = true;
   try {
     await api('/api/avisos/modelos/' + encodeURIComponent(id), { method: 'DELETE' });

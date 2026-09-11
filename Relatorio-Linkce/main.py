@@ -41,6 +41,8 @@ async def enforce_access(request, call_next):
             role = role_of(user)
             if path.startswith('/api/avisos') and request.method != 'GET' and role not in ('gestor', 'apoio'):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+            if path == '/api/avisos/historico' and role not in ('gestor', 'apoio'):
+                raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
             if path == '/gerar_relatorio' or (path.endswith('/imagens') and request.method == 'POST'):
                 if estado_aviso().get('bloqueado'):
                     raise HTTPException(423, 'Área técnica bloqueada. Consulte o aviso importante.')
@@ -76,6 +78,25 @@ AVISOS_PADRAO = [
     {'titulo': 'Manutenção do sistema', 'mensagem': 'Aviso: o sistema estará em manutenção. Aguarde a liberação antes de enviar relatórios.'},
 ]
 
+def registrar_historico_aviso(request: Request, acao: str, *, modelo_id=None,
+                              titulo='', mensagem='', bloqueado=False):
+    """Registra ações sem impedir a operação caso a tabela ainda não exista."""
+    if not supabase_client:
+        return
+    user = getattr(request.state, 'user', {}) or {}
+    try:
+        supabase_client.table('avisos_historico').insert({
+            'acao': acao,
+            'modelo_id': modelo_id,
+            'titulo': titulo[:120] if isinstance(titulo, str) else '',
+            'mensagem': mensagem[:3000] if isinstance(mensagem, str) else '',
+            'bloqueado': bool(bloqueado),
+            'usuario_id': user.get('id'),
+            'usuario_email': user.get('email', ''),
+        }).execute()
+    except Exception as exc:
+        logger.warning('Histórico de avisos indisponível: %s', exc)
+
 @app.get('/api/avisos')
 async def obter_aviso():
     return estado_aviso()
@@ -90,6 +111,18 @@ async def listar_modelos_aviso():
     except Exception:
         return {'modelos': AVISOS_PADRAO}
 
+@app.get('/api/avisos/historico')
+async def listar_historico_avisos(limite: int = Query(30, ge=1, le=100)):
+    if not supabase_client:
+        return {'historico': []}
+    try:
+        result = (supabase_client.table('avisos_historico')
+                  .select('id,acao,modelo_id,titulo,mensagem,bloqueado,usuario_email,criado_em')
+                  .order('criado_em', desc=True).limit(limite).execute())
+        return {'historico': result.data or []}
+    except Exception:
+        return {'historico': []}
+
 @app.post('/api/avisos/modelos')
 async def salvar_modelo_aviso(request: Request):
     try:
@@ -99,16 +132,30 @@ async def salvar_modelo_aviso(request: Request):
         raise HTTPException(422, 'Informe título e mensagem válidos.')
     try:
         payload = {'titulo': titulo, 'mensagem': mensagem, 'atualizado_por': request.state.user['id']}
-        if data.get('id'): payload['id'] = int(data['id'])
+        modelo_id = int(data['id']) if data.get('id') else None
+        if modelo_id:
+            payload['id'] = modelo_id
+        existentes = supabase_client.table('avisos_modelos').select('id,titulo').execute().data or []
+        if any(str(item.get('titulo', '')).casefold() == titulo.casefold()
+               and str(item.get('id')) != str(modelo_id) for item in existentes):
+            raise HTTPException(409, 'Já existe uma mensagem com este nome. Escolha outro nome.')
         supabase_client.table('avisos_modelos').upsert(payload).execute()
+        registrar_historico_aviso(request, 'mensagem_atualizada' if modelo_id else 'mensagem_criada',
+                                  modelo_id=modelo_id, titulo=titulo, mensagem=mensagem)
         return {'mensagem': 'Mensagem salva.'}
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(503, 'Não foi possível salvar a mensagem. Execute a migração de avisos.')
 
 @app.delete('/api/avisos/modelos/{modelo_id}')
-async def excluir_modelo_aviso(modelo_id: int):
+async def excluir_modelo_aviso(modelo_id: int, request: Request):
     try:
+        existente = (supabase_client.table('avisos_modelos').select('id,titulo,mensagem')
+                     .eq('id', modelo_id).maybe_single().execute().data or {})
         supabase_client.table('avisos_modelos').delete().eq('id', modelo_id).execute()
+        registrar_historico_aviso(request, 'mensagem_excluida', modelo_id=modelo_id,
+                                  titulo=existente.get('titulo', ''), mensagem=existente.get('mensagem', ''))
         return {'mensagem': 'Mensagem excluída.'}
     except Exception:
         raise HTTPException(503, 'Não foi possível excluir a mensagem.')
@@ -119,7 +166,10 @@ async def salvar_aviso(request: Request):
         data = await request.json()
         mensagem = data.get('mensagem', '')
         bloqueado = data.get('bloqueado')
+        acao = data.get('acao') or ('bloqueado' if bloqueado else 'publicado')
         if not isinstance(mensagem, str) or len(mensagem) > 3000 or type(bloqueado) is not bool:
+            raise ValueError()
+        if acao not in ('publicado', 'bloqueado', 'liberado'):
             raise ValueError()
         if bloqueado and not mensagem.strip():
             raise ValueError()
@@ -131,6 +181,7 @@ async def salvar_aviso(request: Request):
         supabase_client.table('avisos_operacao').upsert({'id': 1, 'mensagem': mensagem.strip(),
             'bloqueado': bloqueado, 'atualizado_por': request.state.user['id'],
             'atualizado_em': datetime.now(timezone.utc).isoformat()}).execute()
+        registrar_historico_aviso(request, acao, mensagem=mensagem.strip(), bloqueado=bloqueado)
         return {'mensagem': 'Aviso atualizado.'}
     except Exception:
         raise HTTPException(503, 'Não foi possível salvar o aviso.')
