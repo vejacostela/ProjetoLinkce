@@ -1005,6 +1005,13 @@ async function apiFetch(url, options = {}) {
 }
 
 let currentUser = null;
+let idleTimer;
+function iniciarExpiracaoSessao() {
+  clearTimeout(idleTimer);
+  const reset = () => { clearTimeout(idleTimer); idleTimer = setTimeout(async () => { try { await sbClient?.auth.signOut({scope:'local'}); } finally { currentUser=null; localStorage.removeItem('linkce_user'); mostrarLogin(); const el=document.getElementById('loginError'); el.textContent='Sessão encerrada por inatividade. Entre novamente.'; el.style.display='block'; } }, 30*60*1000); };
+  ['click','keydown','pointerdown','touchstart'].forEach(type=>window.addEventListener(type,reset,{passive:true}));
+  reset();
+}
 const notices=window.installNotices(apiFetch,()=>currentUser);
 
 async function initAuth() {
@@ -1075,6 +1082,7 @@ function mostrarLogin() {
 }
 
 function mostrarApp(user) {
+  iniciarExpiracaoSessao();
   notices.check();
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('mainApp').style.display = 'block';

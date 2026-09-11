@@ -58,6 +58,9 @@ async def enforce_access(request, call_next):
     response = await call_next(request)
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
+    if (path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca')) or
+        (path.startswith('/api/relatorios/') and path.endswith('/imagens') and request.method in ('POST','PUT','DELETE'))) and hasattr(request.state, 'user'):
+        registrar_auditoria(request, f'{request.method} {path}', 'sucesso' if response.status_code < 400 else f'erro_{response.status_code}')
     return response
 
 # === WHATSAPP ===
@@ -96,6 +99,20 @@ def registrar_historico_aviso(request: Request, acao: str, *, modelo_id=None,
         }).execute()
     except Exception as exc:
         logger.warning('Histórico de avisos indisponível: %s', exc)
+
+
+def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso'):
+    if not supabase_client:
+        return
+    user = getattr(request.state, 'user', {}) or {}
+    try:
+        supabase_client.table('auditoria_gestao').insert({
+            'acao': acao[:120], 'metodo': request.method, 'rota': request.url.path[:300],
+            'resultado': resultado[:40], 'usuario_id': user.get('id'),
+            'usuario_email': user.get('email', '')[:254],
+        }).execute()
+    except Exception as exc:
+        logger.warning('Auditoria indisponível: %s', exc)
 
 @app.get('/api/avisos')
 async def obter_aviso():
@@ -598,6 +615,18 @@ def _find_user_by_email(admin, email: str):
         logger.exception("Falha ao consultar usuários para redefinição de senha")
         raise HTTPException(status_code=503, detail="Não foi possível consultar os usuários cadastrados.")
     raise HTTPException(status_code=404, detail="Nenhuma conta cadastrada com este email.")
+
+
+@app.get("/api/seguranca/auditoria")
+async def consultar_auditoria(limite: int = Query(100, ge=1, le=500)):
+    if not supabase_client:
+        raise HTTPException(503, "Banco de dados não configurado.")
+    try:
+        result = (supabase_client.table("auditoria_gestao").select("id,acao,metodo,rota,resultado,usuario_email,criado_em").order("criado_em", desc=True).limit(limite).execute())
+        return {"auditoria": result.data or []}
+    except Exception:
+        logger.exception("Falha ao consultar auditoria da gestão")
+        raise HTTPException(503, "Auditoria indisponível. Execute a migração de segurança no Supabase.")
 
 @app.get("/api/seguranca/historico-senhas")
 async def historico_senhas(limite: int = Query(30, ge=1, le=100)):

@@ -11,6 +11,27 @@ function authMessage(error) {
   const messages = {invalid_credentials:'Email ou senha incorretos.',email_not_confirmed:'Confirme o email dessa conta no Supabase.',email_provider_disabled:'O login por email está desativado. Contate o gestor.',weak_password:'A senha não atende às regras de segurança.'};
   return messages[error?.code] || (error?.status === 429 ? 'Muitas tentativas. Aguarde e tente novamente.' : 'Não foi possível autenticar. Confira a conexão e a configuração do sistema.');
 }
+const LOGIN_MAX_ATTEMPTS = 5, LOGIN_LOCK_MS = 15 * 60 * 1000, SESSION_IDLE_MS = 30 * 60 * 1000;
+let sessionIdleTimer;
+function loginGuard() {
+  const item = JSON.parse(localStorage.getItem('linkce-login-attempts') || '{"count":0,"until":0}');
+  if (item.until && item.until > Date.now()) return Math.ceil((item.until - Date.now()) / 60000);
+  if (item.until) localStorage.removeItem('linkce-login-attempts');
+  return 0;
+}
+function recordLoginFailure() {
+  const item = JSON.parse(localStorage.getItem('linkce-login-attempts') || '{"count":0,"until":0}');
+  item.count = (item.count || 0) + 1;
+  if (item.count >= LOGIN_MAX_ATTEMPTS) { item.until = Date.now() + LOGIN_LOCK_MS; item.count = 0; }
+  localStorage.setItem('linkce-login-attempts', JSON.stringify(item));
+}
+function clearLoginFailures() { localStorage.removeItem('linkce-login-attempts'); }
+function startSessionGuard() {
+  clearTimeout(sessionIdleTimer);
+  const reset = () => { clearTimeout(sessionIdleTimer); sessionIdleTimer = setTimeout(async () => { try { await client?.auth.signOut({scope:'local'}); } finally { signedOut('Sessão encerrada por inatividade. Entre novamente.'); } }, SESSION_IDLE_MS); };
+  ['click','keydown','pointerdown','touchstart'].forEach(event => window.addEventListener(event, reset, {passive:true}));
+  reset();
+}
 function defaultDates() {
   const parts = new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
   const part = t => parts.find(p => p.type === t).value;
@@ -142,7 +163,7 @@ async function enter(user) {
   const role = user.app_metadata?.role;
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
-  currentUser = user; $('login').hidden = true; $('workspace').hidden = false;
+  currentUser = user; startSessionGuard(); $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('managementButton').hidden = false;
   document.querySelectorAll('[data-management-target]').forEach(b => b.hidden = role !== 'gestor');
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
@@ -244,10 +265,14 @@ async function loadPasswordHistory() {
   const userId = currentUser?.id; $('passwordHistory').replaceChildren(); $('passwordHistoryEmpty').hidden = true;
   try {
     const data = await api('/api/seguranca/historico-senhas?limite=30');
+    const auditData = await api('/api/seguranca/auditoria?limite=100');
     if(userId !== currentUser?.id || !Array.isArray(data.historico)) return;
     const fragment = document.createDocumentFragment();
     for(const item of data.historico) { const tr=document.createElement('tr'); for(const value of [dateLabel(item.criado_em),item.gestor_email,item.usuario_email,item.motivo || '—']) cell(tr,value || '—'); fragment.append(tr); }
     $('passwordHistory').append(fragment); $('passwordHistoryEmpty').hidden = data.historico.length !== 0;
+    const auditFragment = document.createDocumentFragment();
+    for(const item of (auditData.auditoria || [])) { const tr=document.createElement('tr'); for(const value of [dateLabel(item.criado_em),item.acao,item.rota,item.resultado]) cell(tr,value || '—'); auditFragment.append(tr); }
+    $('auditHistory').replaceChildren(auditFragment); $('auditHistoryEmpty').hidden = (auditData.auditoria || []).length !== 0;
   } catch(error) { if(userId === currentUser?.id) $('passwordStatus').textContent = error.message; }
 }
 $('passwordManagerForm').addEventListener('submit',async event=>{
@@ -284,13 +309,13 @@ $('imagesForm').addEventListener('submit',async event=>{
   finally{button.disabled=false;}
 });
 $('loginForm').addEventListener('submit',async e=>{
-  e.preventDefault(); $('loginButton').disabled=true; $('loginStatus').textContent='Entrando...';
+  e.preventDefault(); const wait=loginGuard(); if(wait){$('loginStatus').textContent='Muitas tentativas. Aguarde '+wait+' minuto(s) e tente novamente.'; return;} $('loginButton').disabled=true; $('loginStatus').textContent='Entrando...';
   try {
     if(!client) throw new Error('config');
     const {data,error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
     if(error) throw error; if(!data.user) throw new Error('session');
-    $('password').value=''; await enter(data.user);
-  }catch(error){$('loginStatus').textContent=authMessage(error);}finally{$('loginButton').disabled=false;}
+    clearLoginFailures(); $('password').value=''; await enter(data.user);
+  }catch(error){recordLoginFailure();$('loginStatus').textContent=authMessage(error);}finally{$('loginButton').disabled=false;}
 });
 $('userForm').addEventListener('submit',async e=>{
   e.preventDefault(); const userId=currentUser?.id; $('saveUser').disabled=true; $('userStatus').textContent='Criando conta...';
