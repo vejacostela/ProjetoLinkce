@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script defer src="/panel-assets/panel.js"></script>
+<script defer src="/panel-assets/panel.js?v=2"></script>
 <script defer src="/panel-assets/notices-admin.js?v=3"></script>
 </head>
 <body>
@@ -24,7 +24,7 @@
 <form id="filters" class="filters surface"><label>Data inicial<input id="start" type="date" required></label><label>Data final<input id="end" type="date" required></label><label class="grow">Técnico<input id="technician" type="search" placeholder="Nome completo do técnico" maxlength="200"></label><button class="primary" id="apply">Aplicar filtros</button><button type="button" id="reset">Limpar</button></form>
 <div class="metrics"><article class="surface"><span>Relatórios no período filtrado</span><strong id="total">—</strong></article><article class="surface"><span>Com localização nesta página</span><strong id="located">—</strong></article><article class="surface"><span>Técnicos nesta página</span><strong id="technicians">—</strong></article></div>
 <div class="split"><section class="surface results"><div class="section-title"><h2>Relatórios</h2><span id="pageLabel" class="muted"></span></div><div class="table-scroll"><table><thead><tr><th>Data e hora</th><th>Técnico</th><th>Cabeamento</th><th>Localização</th><th><span class="sr-only">Ação</span></th></tr></thead><tbody id="rows"></tbody></table></div><p id="empty" class="empty" hidden>Nenhum relatório encontrado. Ajuste o período ou o nome do técnico.</p><div class="pagination"><button id="previous" disabled>Anterior</button><button id="next" disabled>Próxima</button></div></section>
-<section class="surface map-panel"><div class="section-title"><h2>Local dos atendimentos</h2></div><p class="muted map-note">Pontos dos relatórios desta página. Não representa rastreamento ao vivo.</p><div id="map" aria-label="Mapa dos atendimentos"></div><p id="mapStatus" class="muted map-note"></p></section></div>
+<section class="surface map-panel"><div class="section-title"><h2>Local dos atendimentos</h2><button id="centerMap" type="button" disabled>Centralizar pontos</button></div><p class="muted map-note">Pontos dos relatórios desta página. Não representa rastreamento ao vivo.</p><div class="map-legend" aria-label="Legenda do mapa"><span><i class="legend-dot legend-cabeado"></i>Cabeado</span><span><i class="legend-dot legend-nao-cabeado"></i>Não cabeado</span><span><i class="legend-dot legend-rejeitado"></i>Rejeitado</span></div><div id="map" aria-label="Mapa dos atendimentos"></div><p id="mapStatus" class="muted map-note"></p></section></div>
 </section>
 </main>
 <dialog id="detail"><div class="dialog-head"><h2>Detalhes do relatório</h2><button type="button" data-close="detail" aria-label="Fechar detalhes">Fechar</button></div><p id="detailStatus" role="status"></p><dl id="detailMeta"></dl><pre id="detailText"></pre><div class="dialog-actions"><button id="copy" disabled>Copiar relatório</button><button id="images" disabled>Imagens</button><a id="mapLink" target="_blank" rel="noopener noreferrer" hidden>Abrir localização ↗</a></div></dialog>

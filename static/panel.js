@@ -19,6 +19,7 @@ function defaultDates() {
 }
 function clearResults() {
   $('rows').replaceChildren(); markers?.clearLayers();
+  if ($('centerMap')) $('centerMap').disabled = true;
   for (const id of ['total','located','technicians']) $(id).textContent = '—';
   $('empty').hidden = true; $('pageLabel').textContent = '';
   $('previous').disabled = true; $('next').disabled = true;
@@ -52,6 +53,19 @@ function initMap() {
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(map);
   markers = L.featureGroup().addTo(map);
 }
+function mapMarkerStyle(status) {
+  const colors = {
+    'Cabeado': {color:'#24c79a', fillColor:'#24c79a'},
+    'Não Cabeado': {color:'#6eb6ff', fillColor:'#6eb6ff'},
+    'Rejeitado': {color:'#ff687d', fillColor:'#ff687d'}
+  };
+  return {radius:8, ...(colors[status] || {color:'#ffb547', fillColor:'#ffb547'}), fillOpacity:.88, weight:2};
+}
+function centerMap() {
+  if (!map || !markers?.getLayers().length) return;
+  map.invalidateSize();
+  map.fitBounds(markers.getBounds(), {padding:[35,35], maxZoom:15, animate:true});
+}
 function cell(row, text) { const td = document.createElement('td'); td.textContent = text; row.append(td); return td; }
 function render(data) {
   const reports = data.relatorios;
@@ -74,18 +88,19 @@ function render(data) {
     if (map && hasLocation(r)) {
       const popup = document.createElement('div');
       const name = document.createElement('strong'); name.textContent = r.tecnico;
-      const time = document.createElement('p'); time.textContent = dateLabel(r.criado_em);
+      const time = document.createElement('p'); time.textContent = `${dateLabel(r.criado_em)} · ${r.equipamento_status || 'Status não informado'}`;
       const open = document.createElement('button'); open.textContent = 'Ver relatório'; open.addEventListener('click',()=>openReport(r.id));
       popup.append(name,time,open);
-      L.circleMarker([r.latitude,r.longitude],{radius:8,color:'#ffb547',fillColor:'#ffb547',fillOpacity:.8}).bindPopup(popup).addTo(markers);
+      L.circleMarker([r.latitude,r.longitude],mapMarkerStyle(r.equipamento_status)).bindPopup(popup).addTo(markers);
     }
   }
   $('rows').append(fragment);
   if (map) {
     map.invalidateSize();
-    if (markers.getLayers().length) map.fitBounds(markers.getBounds(),{padding:[35,35],maxZoom:15});
+    if (markers.getLayers().length) centerMap();
     else map.setView([-14,-52],4);
   }
+  if ($('centerMap')) $('centerMap').disabled = !markers?.getLayers().length;
   $('mapStatus').textContent = !window.L ? 'Mapa indisponível. As coordenadas continuam acessíveis nos detalhes.' : reports.some(hasLocation) ? 'Selecione um ponto para abrir o relatório.' : 'Nenhuma localização informada nesta página.';
 }
 async function loadReports() {
@@ -159,6 +174,7 @@ async function openImages() {
 $('filters').addEventListener('submit',e=>{e.preventDefault();applyFilters();});
 $('reset').addEventListener('click',()=>{defaultDates();applyFilters();});
 $('refresh').addEventListener('click',loadReports);
+$('centerMap')?.addEventListener('click', centerMap);
 $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-PAGE_SIZE);loadReports();});
 $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
