@@ -184,9 +184,18 @@ async function openImages() {
     if(reportId !== activeReportId || !Array.isArray(data.imagens)) return;
     const fragment = document.createDocumentFragment();
     for(const image of data.imagens) {
-      const link=document.createElement('a'); link.className='report-image'; link.href=image.url; link.target='_blank'; link.rel='noopener noreferrer'; link.download=image.nome || 'evidencia';
+      const card=document.createElement('article'); card.className='report-image';
+      const link=document.createElement('a'); link.href=image.url; link.target='_blank'; link.rel='noopener noreferrer'; link.download=image.nome || 'evidencia';
       const photo=document.createElement('img'); photo.src=image.url; photo.alt=image.nome || 'Evidência do relatório'; photo.loading='lazy';
-      const label=document.createElement('span'); label.textContent=image.nome || 'Imagem'; link.append(photo,label); fragment.append(link);
+      link.append(photo); card.append(link);
+      const footer=document.createElement('div'); footer.className='report-image-footer';
+      const label=document.createElement('span'); label.textContent=image.nome || 'Imagem';
+      const actions=document.createElement('div'); actions.className='report-image-actions';
+      const replaceInput=document.createElement('input'); replaceInput.type='file'; replaceInput.accept='image/jpeg,image/png,image/webp,image/avif'; replaceInput.hidden=true;
+      const replace=document.createElement('button'); replace.type='button'; replace.textContent='Substituir'; replace.addEventListener('click',()=>replaceInput.click());
+      replaceInput.addEventListener('change',async()=>{ const file=replaceInput.files?.[0]; if(!file)return; const reportId=activeReportId; replace.disabled=true; $('imagesStatus').textContent='Comprimindo e substituindo imagem...'; try { const compressed=await compressImage(file); const form=new FormData(); form.append('arquivo',compressed,compressed.name); await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens/'+encodeURIComponent(image.id),{method:'PUT',body:form}); $('imagesStatus').textContent='Imagem substituída com sucesso.'; await openImages(); } catch(error){$('imagesStatus').textContent=error.message;} finally{replace.disabled=false;replaceInput.value='';} });
+      const remove=document.createElement('button'); remove.type='button'; remove.textContent='Excluir'; remove.addEventListener('click',async()=>{if(!confirm('Excluir esta imagem?'))return; const reportId=activeReportId; remove.disabled=true; try { await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens/'+encodeURIComponent(image.id),{method:'DELETE'}); $('imagesStatus').textContent='Imagem excluída com sucesso.'; await openImages(); } catch(error){$('imagesStatus').textContent=error.message;remove.disabled=false;}});
+      actions.append(replace,remove,replaceInput); footer.append(label,actions); card.append(footer); fragment.append(card);
     }
     $('imagesGallery').append(fragment); $('imagesEmpty').hidden = data.imagens.length !== 0; $('imagesStatus').textContent = data.imagens.length ? 'Clique em uma imagem para salvar.' : '';
   } catch(error) { if(reportId === activeReportId) $('imagesStatus').textContent = error.message; }
@@ -254,11 +263,23 @@ $('passwordManagerForm').addEventListener('submit',async event=>{
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(reportText);$('detailStatus').textContent='Relatório copiado.';}catch(_){$('detailStatus').textContent='Não foi possível copiar. Selecione o texto e copie manualmente.';}});
 $('images').addEventListener('click',openImages);
+async function compressImage(file) {
+  if (!file.type.startsWith('image/')) throw new Error('Selecione um arquivo de imagem.');
+  if (file.size <= 700 * 1024 && file.type !== 'image/avif') return file;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height); bitmap.close();
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .82));
+  if (!blob) throw new Error('Não foi possível compactar a imagem.');
+  const base = (file.name || 'evidencia').replace(/\.[^.]+$/, '');
+  return new File([blob], base + '.jpg', {type:'image/jpeg'});
+}
 $('imagesForm').addEventListener('submit',async event=>{
   event.preventDefault(); if(!activeReportId) return;
   const files=Array.from($('imagesInput').files || []); if(!files.length){$('imagesStatus').textContent='Escolha ao menos uma imagem.';return;}
   const reportId=activeReportId; const button=$('saveImages'); button.disabled=true; $('imagesStatus').textContent='Salvando imagens...';
-  try { let salvas=0; for(const file of files) { if(file.size > 3*1024*1024) throw new Error('Escolha imagens de até 3 MB no painel.'); const form=new FormData(); form.append('arquivos',file,file.name); const result=await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens',{method:'POST',body:form}); salvas+=result.salvas||1; } if(reportId===activeReportId){$('imagesStatus').textContent=salvas+' imagem(ns) salva(s).';await openImages();} }
+  try { let salvas=0; for(const file of files) { if(file.size > 8*1024*1024) throw new Error('Escolha imagens de até 8 MB.'); $('imagesStatus').textContent='Comprimindo imagem '+(salvas+1)+' de '+files.length+'...'; const compressed=await compressImage(file); const form=new FormData(); form.append('arquivos',compressed,compressed.name); const result=await api('/api/relatorios/'+encodeURIComponent(reportId)+'/imagens',{method:'POST',body:form}); salvas+=result.salvas||1; } if(reportId===activeReportId){$('imagesStatus').textContent=salvas+' imagem(ns) enviada(s) com sucesso.';await openImages();} }
   catch(error){if(reportId===activeReportId)$('imagesStatus').textContent=error.message;}
   finally{button.disabled=false;}
 });

@@ -756,6 +756,63 @@ async def adicionar_imagens_relatorio(relatorio_id: UUID, request: Request, arqu
         logger.exception("Falha ao salvar evidências")
         raise HTTPException(503, "Não foi possível salvar as imagens. Tente novamente.")
 
+
+@app.delete("/api/relatorios/{relatorio_id}/imagens/{imagem_id}")
+async def excluir_imagem_relatorio(relatorio_id: UUID, imagem_id: UUID, request: Request):
+    relatorio = _buscar_relatorio_evidencia(relatorio_id)
+    role = role_of(request.state.user)
+    if role not in ("gestor", "apoio") and relatorio.get("user_id") != request.state.user.get("id"):
+        raise HTTPException(403, "Você só pode alterar imagens dos seus próprios relatórios.")
+    try:
+        result = supabase_client.table("relatorio_imagens").select("id,caminho").eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).single().execute()
+        if not result.data:
+            raise HTTPException(404, "Imagem não encontrada.")
+        supabase_client.table("relatorio_imagens").delete().eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).execute()
+        try:
+            supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([result.data["caminho"]])
+        except Exception:
+            logger.warning("Registro excluído, mas o arquivo físico não foi removido")
+        return {"excluida": True}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao excluir evidência")
+        raise HTTPException(503, "Não foi possível excluir a imagem.")
+
+@app.put("/api/relatorios/{relatorio_id}/imagens/{imagem_id}")
+async def substituir_imagem_relatorio(relatorio_id: UUID, imagem_id: UUID, request: Request, arquivo: UploadFile = File(...)):
+    relatorio = _buscar_relatorio_evidencia(relatorio_id)
+    role = role_of(request.state.user)
+    if role not in ("gestor", "apoio") and relatorio.get("user_id") != request.state.user.get("id"):
+        raise HTTPException(403, "Você só pode alterar imagens dos seus próprios relatórios.")
+    tipo = (arquivo.content_type or "").lower()
+    if tipo not in TIPOS_IMAGEM:
+        raise HTTPException(422, "Formato inválido. Use JPG, PNG, WEBP ou AVIF.")
+    conteudo = await arquivo.read()
+    if not conteudo or len(conteudo) > MAX_TAMANHO_IMAGEM:
+        raise HTTPException(422, "Cada imagem deve ter no máximo 8 MB.")
+    try:
+        old = supabase_client.table("relatorio_imagens").select("id,caminho").eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).single().execute()
+        if not old.data:
+            raise HTTPException(404, "Imagem não encontrada.")
+        novo_caminho = f"{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
+        supabase_client.storage.from_(EVIDENCIAS_BUCKET).upload(novo_caminho, conteudo, file_options={"content-type": tipo, "upsert": "false"})
+        try:
+            supabase_client.table("relatorio_imagens").update({"caminho": novo_caminho, "nome_original": os.path.basename(arquivo.filename or "evidencia")[:255], "tipo": tipo, "tamanho_bytes": len(conteudo), "enviado_por": request.state.user["id"]}).eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).execute()
+        except Exception:
+            supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([novo_caminho])
+            raise
+        try:
+            supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([old.data["caminho"]])
+        except Exception:
+            logger.warning("Imagem antiga não removida após substituição")
+        return {"substituida": True}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao substituir evidência")
+        raise HTTPException(503, "Não foi possível substituir a imagem.")
+
 # === API BANCO ===
 @app.get("/api/banco/previa")
 async def previa_limpeza(manter_dias: int = Query(30, ge=1, le=36500)):
