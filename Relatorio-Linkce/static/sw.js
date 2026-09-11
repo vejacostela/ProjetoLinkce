@@ -1,5 +1,5 @@
-const CACHE = 'linkce-photos-v2';
-const SHELL = ['/tecnico', '/static/style.css', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
+const CACHE = 'linkce-photos-v3';
+const SHELL = ['/tecnico', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
 
 // ── Instalação: pré-cache do shell ──────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -137,8 +137,15 @@ function gerarRelatorioJS(data) {
 // ── IndexedDB ────────────────────────────────────────────────────────────────
 function abrirDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('linkce-offline', 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore('fila', { keyPath: 'id', autoIncrement: true });
+    const req = indexedDB.open('linkce-offline', 2);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('fila')) db.createObjectStore('fila', { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains('fotos')) {
+        const fotos = db.createObjectStore('fotos', { keyPath: 'id', autoIncrement: true });
+        fotos.createIndex('request_id', 'request_id', { unique: false });
+      }
+    };
     req.onsuccess  = e => resolve(e.target.result);
     req.onerror    = e => reject(e.target.error);
   });
@@ -147,10 +154,18 @@ function abrirDB() {
 async function salvarNaFila(dados) {
   const db = await abrirDB();
   return new Promise((resolve, reject) => {
-    const tx  = db.transaction('fila', 'readwrite');
-    const req = tx.objectStore('fila').add(dados);
-    req.onsuccess = e => resolve(e.target.result);
-    tx.onerror    = e => reject(e.target.error);
+    const tx = db.transaction('fila', 'readwrite');
+    const store = tx.objectStore('fila');
+    const req = store.getAll();
+    req.onsuccess = () => {
+      if ((req.result || []).some(item => item.request_id && item.request_id === dados.request_id)) {
+        resolve(dados.request_id); return;
+      }
+      const add = store.add(dados);
+      add.onsuccess = e => resolve(e.target.result);
+      add.onerror = e => reject(e.target.error);
+    };
+    req.onerror = e => reject(e.target.error);
   });
 }
 
@@ -172,6 +187,49 @@ async function removerDaFila(id) {
     tx.oncomplete = resolve;
     tx.onerror    = e => reject(e.target.error);
   });
+}
+
+
+async function salvarFotosOffline(requestId, files) {
+  if (!files?.length) return;
+  const db = await abrirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fotos', 'readwrite');
+    const store = tx.objectStore('fotos');
+    files.forEach(file => store.add({request_id: requestId, nome: file.name, tipo: file.type, blob: file}));
+    tx.oncomplete = resolve; tx.onerror = e => reject(e.target.error);
+  });
+}
+async function buscarFotosOffline(requestId) {
+  const db = await abrirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fotos', 'readonly');
+    const req = tx.objectStore('fotos').index('request_id').getAll(requestId);
+    req.onsuccess = e => resolve(e.target.result || []); req.onerror = e => reject(e.target.error);
+  });
+}
+async function removerFotosOffline(requestId) {
+  const db = await abrirDB();
+  const fotos = await buscarFotosOffline(requestId);
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fotos', 'readwrite');
+    const store = tx.objectStore('fotos');
+    fotos.forEach(foto => store.delete(foto.id));
+    tx.oncomplete = resolve; tx.onerror = e => reject(e.target.error);
+  });
+}
+async function sincronizarFotosOffline(requestId, relatorioId, token) {
+  const fotos = await buscarFotosOffline(requestId);
+  for (const foto of fotos) {
+    const payload = new FormData();
+    payload.append('arquivos', foto.blob, foto.nome || 'evidencia.jpg');
+    const res = await fetch('/api/relatorios/' + encodeURIComponent(relatorioId) + '/imagens', {
+      method: 'POST', headers: {'X-Sync-Queue':'1', 'Authorization':'Bearer ' + token}, body: payload
+    });
+    if (!res.ok) return false;
+  }
+  await removerFotosOffline(requestId);
+  return true;
 }
 
 // ── Background Sync ───────────────────────────────────────────────────────────
@@ -207,7 +265,9 @@ async function sincronizarFila() {
           headers: { 'Content-Type': 'application/json', 'X-Sync-Queue': '1', 'Authorization': 'Bearer ' + authSession.token },
           body: JSON.stringify(dados)
         });
-        if (res.ok && (await res.json()).salvo === true) {
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok && payload.salvo === true) {
+          if (!(await sincronizarFotosOffline(dados.request_id, payload.id || dados.request_id, authSession.token))) continue;
           await removerDaFila(id);
           enviados++;
         }
@@ -228,6 +288,12 @@ self.addEventListener('message', e => {
     authSession = { token: e.data.token, userId: e.data.userId };
   }
   if (e.data?.type === 'CLEAR_SESSION') authSession = null;
+  if (e.data?.type === 'SALVAR_FOTOS_OFFLINE') {
+    e.waitUntil(salvarFotosOffline(e.data.requestId, e.data.files || []).then(() => e.ports?.[0]?.postMessage({ok:true})).catch(() => e.ports?.[0]?.postMessage({ok:false})));
+  }
+  if (e.data?.type === 'REMOVER_FOTOS_OFFLINE') {
+    e.waitUntil(removerFotosOffline(e.data.requestId).catch(() => {}));
+  }
   if (e.data?.type === 'SYNC_NOW') {
     e.waitUntil(sincronizarFila());
   }

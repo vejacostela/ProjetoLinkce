@@ -2,6 +2,7 @@
   "name": "Relatório Técnico Linkce",
   "short_name": "Linkce",
   "description": "Sistema de relatórios técnicos de campo para fibra óptica",
+  "id": "/tecnico",
   "start_url": "/tecnico",
   "display": "standalone",
   "background_color": "#0a0e27",

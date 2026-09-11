@@ -721,6 +721,7 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
   <span>📡 Sem conexão — relatório será salvo e enviado ao voltar online</span>
   <span id="badgePendente" style="background:#fff;color:#e55a1f;border-radius:12px;padding:2px 10px;font-weight:700;font-size:12px;display:none"></span>
   <button id="btnSincronizar" onclick="sincronizarAgora()" style="background:#fff;color:#e55a1f;border:none;border-radius:12px;padding:5px 14px;font-weight:600;cursor:pointer;font-size:12px;">↑ Sincronizar agora</button>
+  <button id="btnInstalar" type="button" hidden style="background:#172033;color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:12px;padding:5px 14px;font-weight:600;cursor:pointer;font-size:12px;">＋ Instalar aplicativo</button>
 </div>
 
 <!-- LOGIN SCREEN -->
@@ -1095,6 +1096,7 @@ function mostrarApp(user) {
   // All authorized profiles may fill reports in the technical area.
   carregarMateriais();
   restaurarRascunho();
+  sincronizarAgora();
 }
 
 document.getElementById('btnLogin').addEventListener('click', async () => {
@@ -1488,6 +1490,11 @@ data.user_id  = currentUser?.id || '';
 const loc = await capturarLocalizacao();
 data.latitude  = loc.latitude;
 data.longitude = loc.longitude;
+let fotosNaFila = true;
+if (evidenceFiles.length) {
+  fotosNaFila = await salvarFotosNaFilaOffline(pending.id);
+  if (!fotosNaFila && !navigator.onLine) mostrarToastSistema('Relatório será salvo, mas as fotos precisarão ser adicionadas quando a conexão voltar.');
+}
 apiFetch("/gerar_relatorio", {
 method: "POST",
 headers: { "Content-Type": "application/json" },
@@ -1507,12 +1514,14 @@ textarea.value = result.relatorio;
 container.style.display = "block";
 container.scrollIntoView({ behavior: "smooth" });
 if (result.offline) {
+if (fotosNaFila) mostrarToastSistema('Relatório e fotos guardados neste celular. Serão sincronizados quando a conexão voltar.');
 pedirContagemFila();
 } else {
 limparRascunho();
 try {
   const fotos = await uploadEvidenceFiles(result.id);
   if (fotos.salvas) mostrarToastSistema(fotos.salvas + ' foto(s) anexada(s) ao relatório.');
+  removerFotosDaFilaOffline(pending.id);
 } catch (fotoErro) {
   erroDiv.textContent = '⚠️ Relatório salvo, mas as fotos ainda não foram enviadas: ' + fotoErro.message;
   erroDiv.style.display = 'block';
@@ -1603,6 +1612,26 @@ function mostrarToastSistema(mensagem, duracao = 4000) {
   el._t2 = setTimeout(() => { el.style.display = 'none'; }, duracao + 350);
 }
 
+
+async function salvarFotosNaFilaOffline(requestId) {
+  if (!evidenceFiles.length || !('serviceWorker' in navigator)) return false;
+  const registration = await navigator.serviceWorker.ready.catch(() => null);
+  const worker = navigator.serviceWorker.controller || registration?.active || registration?.waiting;
+  if (!worker) return false;
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), 5000);
+    channel.port1.onmessage = event => { clearTimeout(timer); resolve(event.data?.ok === true); };
+    worker.postMessage({
+      type:'SALVAR_FOTOS_OFFLINE', requestId,
+      files:evidenceFiles.map(item => ({name:item.file.name,type:item.file.type,blob:item.file}))
+    }, [channel.port2]);
+  });
+}
+function removerFotosDaFilaOffline(requestId) {
+  navigator.serviceWorker.controller?.postMessage({type:'REMOVER_FOTOS_OFFLINE', requestId});
+}
+
 // ── Offline / PWA ─────────────────────────────────────────────────────────────
 function atualizarBannerOffline() {
   const banner = document.getElementById('offlineBanner');
@@ -1626,19 +1655,16 @@ async function sincronizarAgora() {
   let session;
   try { session = (await sbClient.auth.getSession()).data.session; } catch (_) { return; }
   if (!session) return;
-  navigator.serviceWorker.controller?.postMessage({
-    type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id
-  });
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg => {
+    const worker = navigator.serviceWorker.controller || reg.active || reg.waiting;
+    worker?.postMessage({ type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id });
     // Background Sync API: o browser deduplica — não dispara duas vezes
     if ('sync' in reg) {
-      reg.sync.register('sync-relatorios').catch(() => {
-        navigator.serviceWorker.controller?.postMessage({ type: 'SYNC_NOW' });
-      });
+      reg.sync.register('sync-relatorios').catch(() => worker?.postMessage({ type: 'SYNC_NOW' }));
     } else {
       // Fallback para browsers sem Background Sync (Firefox, iOS Safari)
-      navigator.serviceWorker.controller?.postMessage({ type: 'SYNC_NOW' });
+      worker?.postMessage({ type: 'SYNC_NOW' });
     }
   });
 }
@@ -1681,6 +1707,27 @@ if ('serviceWorker' in navigator) {
     }
   });
 }
+
+
+// Instalação como aplicativo (PWA)
+let deferredInstallPrompt = null;
+const installButton = document.getElementById('btnInstalar');
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault(); deferredInstallPrompt = event;
+  if (installButton) installButton.hidden = false;
+});
+installButton?.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  const choice = await deferredInstallPrompt.userChoice;
+  if (choice.outcome === 'accepted') mostrarToastSistema('Aplicativo Linkce instalado neste celular.');
+  deferredInstallPrompt = null; installButton.hidden = true;
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  if (installButton) installButton.hidden = true;
+  mostrarToastSistema('Aplicativo Linkce instalado com sucesso.');
+});
 
 // Verifica status de conexão ao carregar
 atualizarBannerOffline();
