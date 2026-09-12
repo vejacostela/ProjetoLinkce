@@ -42,7 +42,7 @@ function defaultDates() {
 function clearResults() {
   $('rows').replaceChildren(); markers?.clearLayers();
   if ($('centerMap')) $('centerMap').disabled = true;
-  for (const id of ['total','located','technicians']) $(id).textContent = '—';
+  for (const id of ['total','technicians']) { const node=$(id); if(node) node.textContent = '—'; }
   $('empty').hidden = true; $('pageLabel').textContent = '';
   $('previous').disabled = true; $('next').disabled = true;
   $('mapStatus').textContent = '';
@@ -55,7 +55,7 @@ function signedOut(message = '') {
   $('managementDialog').close(); clearBankPreview();
   $('detail').close(); $('imagesDialog').close(); $('detailText').textContent = ''; activeReportId = null;
   $('detailMeta').replaceChildren(); $('userForm').reset(); reportText = '';
-  clearResults(); $('loginStatus').textContent = message;
+  clearResults(); if ($('operationSummary')) $('operationSummary').hidden = true; $('loginStatus').textContent = message;
 }
 async function api(path, options = {}) {
   const {data, error} = await client.auth.getSession();
@@ -144,6 +144,37 @@ function render(data) {
   if ($('centerMap')) $('centerMap').disabled = !markers?.getLayers().length;
   $('mapStatus').textContent = !window.L ? 'Mapa indisponível. As coordenadas continuam acessíveis nos detalhes.' : reports.some(hasLocation) ? 'Selecione um ponto para abrir o relatório.' : 'Nenhuma localização informada nesta página.';
 }
+function mostrarAlertaOperacao(mensagem, tipo = 'error') {
+  const alerta = $('operationAlert'); if (!alerta) return;
+  alerta.textContent = mensagem; alerta.className = 'operation-alert' + (tipo === 'success' ? ' success' : ''); alerta.hidden = false;
+}
+function ocultarAlertaOperacao() { const alerta = $('operationAlert'); if (alerta) alerta.hidden = true; }
+function renderResumoOperacao(data) {
+  const total = Number(data?.total) || 0, fotos = Number(data?.com_fotos) || 0, local = Number(data?.com_localizacao) || 0, pendentes = Number(data?.pendentes) || 0;
+  $('total').textContent = total; $('summaryPhotos').textContent = fotos; $('summaryLocated').textContent = local; $('summaryPending').textContent = pendentes;
+  $('summaryPeriod').textContent = total + ' relatório' + (total === 1 ? '' : 's') + ' no período';
+  const list = $('technicianSummary'); list.replaceChildren();
+  const items = Array.isArray(data?.por_tecnico) ? data.por_tecnico : [];
+  $('summaryEmpty').hidden = items.length !== 0;
+  for (const item of items) {
+    const card=document.createElement('article'); card.className='technician-card';
+    const name=document.createElement('strong'); name.textContent=item.tecnico || 'Não informado';
+    const count=document.createElement('span'); count.textContent=(item.total || 0) + ' relatório' + (Number(item.total) === 1 ? '' : 's') + ' · ' + (item.completos || 0) + ' completo' + (Number(item.completos) === 1 ? '' : 's');
+    const pending=document.createElement('span'); pending.className='pending'; pending.textContent=(item.pendentes || 0) + ' pendente' + (Number(item.pendentes) === 1 ? '' : 's');
+    card.append(name,count,pending); list.append(card);
+  }
+  $('operationSummary').hidden = false;
+}
+async function loadResumoOperacao() {
+  const query = new URLSearchParams(activeFilters);
+  try {
+    const data = await api('/api/operacao/resumo?' + query);
+    if (!currentUser) return;
+    renderResumoOperacao(data); ocultarAlertaOperacao();
+  } catch (error) {
+    mostrarAlertaOperacao('Falha ao atualizar o resumo no Supabase. Os dados da tabela podem estar desatualizados. ' + error.message);
+  }
+}
 async function loadReports() {
   const version = ++requestVersion;
   clearResults(); $('status').textContent = 'Carregando relatórios...';
@@ -152,9 +183,9 @@ async function loadReports() {
     const query = new URLSearchParams({...activeFilters,limite:PAGE_SIZE,offset});
     const data = await api('/api/relatorios?' + query);
     if (version !== requestVersion || !currentUser) return;
-    render(data); $('status').textContent = 'Atualizado às ' + dateFormat.format(new Date()) + ' · horário de Brasília';
+    render(data); $('status').textContent = 'Atualizado às ' + dateFormat.format(new Date()) + ' · horário de Brasília'; ocultarAlertaOperacao(); loadResumoOperacao();
   } catch (error) {
-    if (version === requestVersion) { clearResults(); $('status').textContent = error.message; }
+    if (version === requestVersion) { clearResults(); $('status').textContent = error.message; mostrarAlertaOperacao('Falha ao carregar relatórios do Supabase. Tente atualizar novamente. ' + error.message); }
   } finally {
     if (version === requestVersion) { $('apply').disabled = false; $('refresh').disabled = false; }
   }

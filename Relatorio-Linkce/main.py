@@ -46,6 +46,8 @@ async def enforce_access(request, call_next):
             if path == '/gerar_relatorio' or (path.endswith('/imagens') and request.method == 'POST'):
                 if estado_aviso().get('bloqueado'):
                     raise HTTPException(423, 'Área técnica bloqueada. Consulte o aviso importante.')
+            if path.startswith("/api/operacao/") and role not in ("gestor", "apoio"):
+                raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
             if path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
                 if role != "gestor":
                     raise HTTPException(403, "Acesso exclusivo do gestor.")
@@ -487,11 +489,74 @@ Materiais Recolhidos:
         raise
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Formato inválido: {str(e)}")
-    except Exception as e:
-        logger.error(f"❌ Erro interno: {e}")
-        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
+    except Exception:
+        logger.exception("Falha ao salvar relatório no Supabase")
+        raise HTTPException(status_code=503, detail="Não foi possível salvar no Supabase. Verifique a conexão; o formulário permanece preservado para tentar novamente.")
 
 # === API RELATÓRIOS ===
+
+@app.get("/api/operacao/resumo")
+async def resumo_operacao(inicio: date = None, fim: date = None, tecnico: str = Query(None, max_length=200)):
+    if inicio and fim and inicio > fim:
+        raise HTTPException(422, "A data inicial deve ser anterior ou igual à final.")
+    if not supabase_client:
+        raise HTTPException(503, "Banco de dados não configurado.")
+    brasil = timezone(BRASIL_OFFSET)
+    try:
+        rows = []
+        start = 0
+        while True:
+            query = supabase_client.table("relatorios").select(
+                "id,tecnico,equipamento_status,maior_sinal,latitude,longitude"
+            )
+            if tecnico:
+                query = query.eq("tecnico", tecnico.strip())
+            if inicio:
+                query = query.gte("criado_em", datetime.combine(inicio, time.min, tzinfo=brasil).isoformat())
+            if fim:
+                query = query.lt("criado_em", datetime.combine(fim + timedelta(days=1), time.min, tzinfo=brasil).isoformat())
+            batch = query.order("criado_em", desc=True).order("id", desc=True).range(start, start + 999).execute().data or []
+            rows.extend(batch)
+            if len(batch) < 1000:
+                break
+            start += 1000
+        image_counts = {}
+        for pos in range(0, len(rows), 500):
+            ids = [row.get("id") for row in rows[pos:pos + 500] if row.get("id")]
+            if not ids:
+                continue
+            image_rows = supabase_client.table("relatorio_imagens").select("relatorio_id").in_("relatorio_id", ids).execute().data or []
+            for image in image_rows:
+                rid = image.get("relatorio_id")
+                image_counts[rid] = image_counts.get(rid, 0) + 1
+        por_tecnico = {}
+        com_fotos = com_localizacao = pendentes = 0
+        for row in rows:
+            rid = row.get("id")
+            fotos = image_counts.get(rid, 0)
+            localizado = (
+                isinstance(row.get("latitude"), (int, float)) and isinstance(row.get("longitude"), (int, float))
+                and -90 <= row.get("latitude") <= 90 and -180 <= row.get("longitude") <= 180
+            )
+            completo = bool(row.get("equipamento_status") and row.get("maior_sinal") and localizado and fotos > 0)
+            nome = (row.get("tecnico") or "Não informado").strip() or "Não informado"
+            item = por_tecnico.setdefault(nome, {"tecnico": nome, "total": 0, "completos": 0, "pendentes": 0})
+            item["total"] += 1
+            item["completos"] += int(completo)
+            item["pendentes"] += int(not completo)
+            com_fotos += int(fotos > 0)
+            com_localizacao += int(localizado)
+            pendentes += int(not completo)
+        return {
+            "total": len(rows), "com_fotos": com_fotos, "com_localizacao": com_localizacao,
+            "pendentes": pendentes, "por_tecnico": sorted(por_tecnico.values(), key=lambda item: (-item["total"], item["tecnico"].casefold()))
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao calcular resumo operacional")
+        raise HTTPException(503, "Resumo operacional indisponível. Verifique a conexão com o Supabase.")
+
 @app.get("/api/relatorios")
 async def listar_relatorios(
     limite: int = Query(100, ge=1, le=200),

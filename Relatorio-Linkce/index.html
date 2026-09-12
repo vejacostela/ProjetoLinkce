@@ -1534,7 +1534,8 @@ throw new Error(result.error || "Erro desconhecido");
 })
 .catch(function(err) {
 console.error("ERRO:", err);
-erroDiv.textContent = "❌ Erro: " + err.message;
+const mensagem = !navigator.onLine ? '📡 Sem conexão: o formulário permanece salvo e será enviado quando a internet voltar.' : (String(err.message).includes('503') || String(err.message).toLowerCase().includes('supabase') ? '⚠️ Falha ao enviar ao Supabase. Tente novamente; seus dados continuam preservados.' : '❌ Erro: ' + err.message);
+erroDiv.textContent = mensagem;
 erroDiv.style.display = "block";
 })
 .finally(function() {
