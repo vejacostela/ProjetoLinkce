@@ -110,7 +110,6 @@ function render(data) {
   const visibleReports = filteredReports(reports);
   clearResults();
   $('total').textContent = visibleReports.length + (visibleReports.length !== reports.length ? ` de ${data.total}` : '');
-  $('located').textContent = visibleReports.filter(hasLocation).length;
   $('technicians').textContent = new Set(visibleReports.map(r => r.user_id || r.tecnico)).size;
   $('empty').hidden = visibleReports.length !== 0;
   $('pageLabel').textContent = visibleReports.length ? `${offset + 1}–${offset + visibleReports.length} de ${data.total}` : '0 resultados';
