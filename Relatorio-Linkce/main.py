@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+APP_VERSION = os.getenv("APP_VERSION", "2026.09.13")
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +32,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def enforce_access(request, call_next):
+    request_id = request.headers.get("X-Request-ID") or uuid4().hex
+    request.state.request_id = request_id
     path = request.url.path
     if path.startswith("/api/debug/") or path == "/api/materiais/recarregar":
         return JSONResponse({"detail": "Recurso indisponível."}, status_code=404)
@@ -56,8 +59,12 @@ async def enforce_access(request, call_next):
                 raise HTTPException(403, "Acesso não autorizado.")
             request.state.user = user
         except HTTPException as exc:
-            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+            response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+            response.headers["X-Request-ID"] = request_id
+            response.headers["Cache-Control"] = "no-store"
+            return response
     response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if (path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca')) or
@@ -255,9 +262,26 @@ EVIDENCIAS_BUCKET = "relatorio-evidencias"
 MAX_IMAGENS_POR_ENVIO = 10
 MAX_IMAGENS_POR_RELATORIO = 30
 MAX_TAMANHO_IMAGEM = 8 * 1024 * 1024
+MAX_TAMANHO_TOTAL_IMAGENS = 50 * 1024 * 1024
 TIPOS_IMAGEM = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif"
 }
+
+def detectar_possivel_duplicado(dados: dict) -> bool:
+    """Sinaliza possíveis reenvios recentes sem bloquear o técnico."""
+    if not supabase_client:
+        return False
+    try:
+        corte = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        result = (supabase_client.table("relatorios").select("id")
+                  .eq("user_id", dados.get("user_id"))
+                  .eq("situacao_encontrada", dados.get("situacao_encontrada", ""))
+                  .eq("resolucao_problema", dados.get("resolucao_problema", ""))
+                  .gte("criado_em", corte).limit(1).execute())
+        return bool(result.data)
+    except Exception:
+        logger.info("Detecção de duplicidade indisponível; envio mantido.")
+        return False
 
 def salvar_relatorio(dados: dict):
     if not supabase_client:
@@ -453,6 +477,10 @@ Materiais Recolhidos:
 -------------------------------------
 """.strip()
 
+        possivel_duplicado = detectar_possivel_duplicado({
+            "user_id": user_id, "situacao_encontrada": relatorio_texto,
+            "resolucao_problema": problema_tecnico,
+        })
         created = salvar_relatorio({
             "id": data["request_id"],
             "tecnico":              tecnico,
@@ -483,7 +511,7 @@ Materiais Recolhidos:
         resumo = relatorio[:400] + "..." if len(relatorio) > 400 else relatorio
         if created:
             background_tasks.add_task(notificar_whatsapp, tecnico, resumo)
-        return JSONResponse(content={"relatorio": relatorio, "salvo": True, "id": data["request_id"]})
+        return JSONResponse(content={"relatorio": relatorio, "salvo": True, "id": data["request_id"], "possivel_duplicado": possivel_duplicado})
 
     except HTTPException:
         raise
@@ -507,7 +535,7 @@ async def resumo_operacao(inicio: date = None, fim: date = None, tecnico: str = 
         start = 0
         while True:
             query = supabase_client.table("relatorios").select(
-                "id,tecnico,equipamento_status,maior_sinal,latitude,longitude"
+                "id,criado_em,tecnico,equipamento_status,maior_sinal,latitude,longitude"
             )
             if tecnico:
                 query = query.eq("tecnico", tecnico.strip())
@@ -530,6 +558,7 @@ async def resumo_operacao(inicio: date = None, fim: date = None, tecnico: str = 
                 rid = image.get("relatorio_id")
                 image_counts[rid] = image_counts.get(rid, 0) + 1
         por_tecnico = {}
+        por_dia = {}
         com_fotos = com_localizacao = pendentes = 0
         for row in rows:
             rid = row.get("id")
@@ -539,6 +568,13 @@ async def resumo_operacao(inicio: date = None, fim: date = None, tecnico: str = 
                 and -90 <= row.get("latitude") <= 90 and -180 <= row.get("longitude") <= 180
             )
             completo = bool(row.get("equipamento_status") and row.get("maior_sinal") and localizado and fotos > 0)
+            criado = row.get("criado_em")
+            if criado:
+                try:
+                    dia = datetime.fromisoformat(str(criado).replace("Z", "+00:00")).astimezone(brasil).date().isoformat()
+                    por_dia[dia] = por_dia.get(dia, 0) + 1
+                except (TypeError, ValueError):
+                    pass
             nome = (row.get("tecnico") or "Não informado").strip() or "Não informado"
             item = por_tecnico.setdefault(nome, {"tecnico": nome, "total": 0, "completos": 0, "pendentes": 0})
             item["total"] += 1
@@ -549,7 +585,8 @@ async def resumo_operacao(inicio: date = None, fim: date = None, tecnico: str = 
             pendentes += int(not completo)
         return {
             "total": len(rows), "com_fotos": com_fotos, "com_localizacao": com_localizacao,
-            "pendentes": pendentes, "por_tecnico": sorted(por_tecnico.values(), key=lambda item: (-item["total"], item["tecnico"].casefold()))
+            "pendentes": pendentes, "por_tecnico": sorted(por_tecnico.values(), key=lambda item: (-item["total"], item["tecnico"].casefold())),
+            "por_dia": [{"dia": dia, "total": total} for dia, total in sorted(por_dia.items())]
         }
     except HTTPException:
         raise
@@ -816,10 +853,14 @@ async def adicionar_imagens_relatorio(relatorio_id: UUID, request: Request, arqu
     if not arquivos or len(arquivos) > MAX_IMAGENS_POR_ENVIO:
         raise HTTPException(422, f"Envie de 1 a {MAX_IMAGENS_POR_ENVIO} imagens por vez.")
     try:
-        total = supabase_client.table("relatorio_imagens").select("id", count="exact", head=True).eq("relatorio_id", str(relatorio_id)).execute()
-        if (total.count or 0) + len(arquivos) > MAX_IMAGENS_POR_RELATORIO:
+        existentes = (supabase_client.table("relatorio_imagens")
+                      .select("id,tamanho_bytes")
+                      .eq("relatorio_id", str(relatorio_id))
+                      .execute().data or [])
+        if len(existentes) + len(arquivos) > MAX_IMAGENS_POR_RELATORIO:
             raise HTTPException(422, f"Cada relatório aceita até {MAX_IMAGENS_POR_RELATORIO} imagens.")
-        salvas = []
+        uploads = []
+        tamanho_total = sum(int(item.get("tamanho_bytes") or 0) for item in existentes)
         for arquivo in arquivos:
             tipo = (arquivo.content_type or "").lower()
             if tipo not in TIPOS_IMAGEM:
@@ -827,6 +868,12 @@ async def adicionar_imagens_relatorio(relatorio_id: UUID, request: Request, arqu
             conteudo = await arquivo.read()
             if not conteudo or len(conteudo) > MAX_TAMANHO_IMAGEM:
                 raise HTTPException(422, "Cada imagem deve ter no máximo 8 MB.")
+            tamanho_total += len(conteudo)
+            if tamanho_total > MAX_TAMANHO_TOTAL_IMAGENS:
+                raise HTTPException(422, "O relatório pode armazenar no máximo 50 MB em imagens.")
+            uploads.append((arquivo, tipo, conteudo))
+        salvas = []
+        for arquivo, tipo, conteudo in uploads:
             caminho = f"{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
             supabase_client.storage.from_(EVIDENCIAS_BUCKET).upload(
                 caminho, conteudo, file_options={"content-type": tipo, "upsert": "false"}
@@ -843,7 +890,7 @@ async def adicionar_imagens_relatorio(relatorio_id: UUID, request: Request, arqu
                 supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([caminho])
                 raise
         logger.info("%s evidência(s) anexada(s) ao relatório %s", len(salvas), relatorio_id)
-        return {"salvas": len(salvas)}
+        return {"salvas": len(salvas), "tamanho_total_bytes": tamanho_total}
     except HTTPException:
         raise
     except Exception:
@@ -1040,13 +1087,25 @@ async def banco_deletar(request: Request):
 
 @app.get("/health")
 async def health_check():
+    inicio = datetime.now(timezone.utc)
+    supabase_status = "não configurado"
+    supabase_ok = False
+    if supabase_client:
+        try:
+            supabase_client.table("relatorios").select("id", head=True).limit(1).execute()
+            supabase_status, supabase_ok = "conectado", True
+        except Exception:
+            supabase_status = "indisponível"
+    status = "ok" if supabase_ok else "degradado"
+    latency_ms = round((datetime.now(timezone.utc) - inicio).total_seconds() * 1000, 2)
     return {
-        "status": "ok",
+        "status": status, "versao": APP_VERSION, "latencia_ms": latency_ms,
         "timezone": "America/Sao_Paulo (UTC-3)",
         "data_brasil": get_data_brasil(),
         "data_utc": datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M"),
         "materiais_carregados": len(MATERIAIS_CACHE) if MATERIAIS_CACHE else 0,
-        "supabase": "conectado" if supabase_client else "não configurado",
+        "supabase": supabase_status,
+        "checks": {"supabase": supabase_ok, "materiais": bool(MATERIAIS_CACHE)},
     }
 
 if __name__ == "__main__":

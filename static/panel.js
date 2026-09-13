@@ -50,6 +50,7 @@ function clearResults() {
 function signedOut(message = '') {
   currentUser = null; requestVersion++; detailVersion++;
   currentReports = [];
+  clearInterval(healthTimer); healthTimer = null;
   $('workspace').hidden = true; $('login').hidden = false;
   $('logout').hidden = true; $('managementButton').hidden = true;
   $('managementDialog').close(); clearBankPreview();
@@ -63,8 +64,20 @@ async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
   headers.set('Authorization',`Bearer ${data.session.access_token}`);
-  const response = await fetch(path,{...options,cache:'no-store',headers});
-  const body = await response.json().catch(() => null);
+  const maxAttempts = options.method && options.method !== 'GET' ? 1 : 3;
+  let response, body, lastError;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      response = await fetch(path,{...options,cache:'no-store',headers});
+      body = await response.json().catch(() => null);
+      if (response.ok || ![502,503,504].includes(response.status) || attempt === maxAttempts - 1) break;
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts - 1) throw new Error('Serviço indisponível. Verifique sua conexão.');
+    }
+    await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+  }
+  if (lastError && !response) throw lastError;
   if (response.status === 401) signedOut('Sua sessão expirou. Entre novamente.');
   if (response.status === 403) signedOut('Seu perfil não permite esta operação.');
   if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : 'Não foi possível concluir a operação. Tente novamente.');
@@ -162,6 +175,17 @@ function renderResumoOperacao(data) {
     const pending=document.createElement('span'); pending.className='pending'; pending.textContent=(item.pendentes || 0) + ' pendente' + (Number(item.pendentes) === 1 ? '' : 's');
     card.append(name,count,pending); list.append(card);
   }
+  const daily = $('dailySummary'); daily.replaceChildren();
+  const dailyItems = Array.isArray(data?.por_dia) ? data.por_dia : [];
+  $('dailyEmpty').hidden = dailyItems.length !== 0;
+  const maxDaily = Math.max(1, ...dailyItems.map(item => Number(item.total) || 0));
+  for (const item of dailyItems) {
+    const row=document.createElement('div'); row.className='daily-row';
+    const label=document.createElement('span'); label.textContent=item.dia || '—';
+    const bar=document.createElement('i'); bar.style.width=Math.max(4, Math.round(((Number(item.total)||0)/maxDaily)*100))+'%'; bar.setAttribute('aria-label',(item.total||0)+' relatórios');
+    const count=document.createElement('strong'); count.textContent=String(item.total||0);
+    row.append(label,bar,count); daily.append(row);
+  }
   $('operationSummary').hidden = false;
 }
 async function loadResumoOperacao() {
@@ -189,11 +213,34 @@ async function loadReports() {
     if (version === requestVersion) { $('apply').disabled = false; $('refresh').disabled = false; }
   }
 }
+async function loadHealth() {
+  const node = $('healthStatus');
+  if (!node) return;
+  try {
+    const response = await fetch('/health', {cache:'no-store'});
+    const data = await response.json().catch(() => ({}));
+    const ok = response.ok && data.status === 'ok' && data.checks?.supabase;
+    node.dataset.state = ok ? 'ok' : 'warn';
+    node.textContent = ok
+      ? 'Supabase conectado · ' + (Number(data.latencia_ms) || 0) + ' ms'
+      : 'Supabase indisponível · dados podem estar desatualizados';
+    node.title = ok ? 'Serviço e banco respondendo normalmente.' : 'Verifique a conexão e as variáveis do Supabase.';
+  } catch (_) {
+    node.dataset.state = 'warn';
+    node.textContent = 'Serviço indisponível · tentando novamente';
+    node.title = 'A API de saúde não respondeu.';
+  }
+}
+function startHealthMonitor() {
+  clearInterval(healthTimer);
+  loadHealth();
+  healthTimer = setInterval(loadHealth, 60000);
+}
 async function enter(user) {
   const role = user.app_metadata?.role;
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
-  currentUser = user; startSessionGuard(); $('login').hidden = true; $('workspace').hidden = false;
+  currentUser = user; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('managementButton').hidden = false;
   document.querySelectorAll('[data-management-target]').forEach(b => b.hidden = role !== 'gestor');
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
@@ -254,6 +301,24 @@ async function openImages() {
 $('filters').addEventListener('submit',e=>{e.preventDefault();applyFilters();});
 $('locationFilter').addEventListener('change',()=>{if(currentReports.length) render({relatorios:currentReports,total:currentReports.length,has_more:false});});
 $('photosFilter').addEventListener('change',()=>{if(currentReports.length) render({relatorios:currentReports,total:currentReports.length,has_more:false});});
+
+const SAVED_FILTER_KEY = 'linkce-dashboard-filter';
+function filtroAtual() {
+  return {inicio:$('start').value, fim:$('end').value, tecnico:$('technician').value.trim()};
+}
+$('saveFilters').addEventListener('click',()=>{
+  localStorage.setItem(SAVED_FILTER_KEY, JSON.stringify(filtroAtual()));
+  $('status').textContent='Filtro salvo neste navegador.';
+});
+$('restoreFilters').addEventListener('click',()=>{
+  try {
+    const saved=JSON.parse(localStorage.getItem(SAVED_FILTER_KEY)||'null');
+    if(!saved) { $('status').textContent='Nenhum filtro salvo neste navegador.'; return; }
+    $('start').value=saved.inicio||$('start').value; $('end').value=saved.fim||$('end').value; $('technician').value=saved.tecnico||'';
+    applyFilters();
+  } catch (_) { $('status').textContent='Não foi possível restaurar o filtro salvo.'; }
+});
+
 $('reset').addEventListener('click',()=>{defaultDates();applyFilters();});
 $('refresh').addEventListener('click',loadReports);
 $('centerMap')?.addEventListener('click', centerMap);
