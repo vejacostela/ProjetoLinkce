@@ -426,12 +426,20 @@ $('userForm').addEventListener('submit',async e=>{
   try {
     const response=await fetch('/api/config',{cache:'no-store'}); if(!response.ok) throw new Error('config');
     const config=await response.json();
-    client=supabase.createClient(config.supabase_url,config.supabase_key,{auth:{storageKey:'linkce-management-auth'}});
+    const createClient=window.supabase?.createClient;
+    if(typeof createClient!=='function') throw new Error('auth-client');
+    client=createClient(config.supabase_url,config.supabase_key,{auth:{storageKey:'linkce-management-auth'}});
     client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT')signedOut('Sessão encerrada.');});
     const {data,error}=await client.auth.getUser();
     if(data?.user && !error) await enter(data.user); else $('loginStatus').textContent='';
-  }catch(_){$('loginStatus').textContent='Não foi possível iniciar o acesso. Recarregue a página ou contate o responsável.';}
-  finally{$('loginButton').disabled=false;}
+  }catch(error){
+    console.error('[Linkce] falha ao iniciar autenticação',error);
+    // Se o cliente já foi criado, o login continua disponível mesmo que a
+    // consulta inicial da sessão falhe ou seja interrompida pelo navegador.
+    $('loginStatus').textContent=client
+      ? ''
+      : 'Não foi possível conectar ao serviço. Recarregue a página e tente novamente.';
+  }finally{$('loginButton').disabled=false;}
 })();
 
 let bankPreview = null, bankVersion = 0, deletingBank = false;
