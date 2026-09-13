@@ -25,3 +25,9 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -m pytest -q
+
+      - name: Testar integração do aplicativo único
+        working-directory: ${{ github.workspace }}
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q test_integration.py
