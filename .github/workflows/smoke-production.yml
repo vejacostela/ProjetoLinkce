@@ -1,0 +1,20 @@
+name: Linkce production smoke
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "URL pública do Linkce"
+        required: true
+        default: "https://projeto-linkce.vercel.app"
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validar páginas e configuração pública
+        env:
+          LINKCE_BASE_URL: ${{ inputs.base_url }}
+        run: python scripts/smoke_production.py
