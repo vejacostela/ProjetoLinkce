@@ -1,6 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVersion = 0, activeReportId = null;
+let healthTimer = null;
 let currentReports = [];
 let activeFilters = {}, reportText = '';
 const PAGE_SIZE = 50;
