@@ -30,4 +30,6 @@ jobs:
         env:
           LINKCE_TEST_DSN: postgresql://postgres:teste-descartavel@localhost:5432/linkce_install_test
       - name: Validar Compose
-        run: docker compose --env-file deploy/.env.example -f deploy/compose.yml config --no-env-resolution --quiet
+        run: |
+          cp deploy/.env.example deploy/.env
+          docker compose --env-file deploy/.env -f deploy/compose.yml config --quiet
