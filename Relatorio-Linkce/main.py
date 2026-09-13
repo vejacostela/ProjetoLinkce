@@ -444,7 +444,13 @@ def salvar_relatorio(dados: dict):
     if not supabase_client:
         raise HTTPException(503, "Banco indisponível. Preserve o rascunho e tente novamente.")
     payload = dict(dados)
-    # Campos opcionais são removidos automaticamente quando a migração ainda não foi executada.
+    # Mantém compatibilidade com instalações que ainda não aplicaram a migração de operação.
+    if not TENANT_COLUMN_AVAILABLE:
+        payload.pop("empresa_id", None)
+    if not REPORT_STATUS_AVAILABLE:
+        for key in ("status_envio", "tentativas_envio", "ultima_tentativa_em",
+                    "sincronizado_em", "erro_envio", "origem_envio"):
+            payload.pop(key, None)
     opcionais = ("empresa_id", "status_envio", "tentativas_envio", "ultima_tentativa_em",
                  "sincronizado_em", "erro_envio", "origem_envio")
     try:
