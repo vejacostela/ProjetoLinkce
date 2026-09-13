@@ -46,7 +46,7 @@ async def enforce_access(request, call_next):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
             if path == '/api/avisos/historico' and role not in ('gestor', 'apoio'):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
-            if path == '/gerar_relatorio' or (path.endswith('/imagens') and request.method == 'POST'):
+            if (path == '/gerar_relatorio' or (path.endswith('/imagens') and request.method == 'POST')) and supabase_client:
                 if estado_aviso().get('bloqueado'):
                     raise HTTPException(423, 'Área técnica bloqueada. Consulte o aviso importante.')
             if path.startswith("/api/operacao/") and role not in ("gestor", "apoio"):
@@ -67,9 +67,11 @@ async def enforce_access(request, call_next):
     response.headers["X-Request-ID"] = request_id
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
-    if (path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca')) or
-        (path.startswith('/api/relatorios/') and path.endswith('/imagens') and request.method in ('POST','PUT','DELETE'))) and hasattr(request.state, 'user'):
-        registrar_auditoria(request, f'{request.method} {path}', 'sucesso' if response.status_code < 400 else f'erro_{response.status_code}')
+    if response.status_code < 400 and path != '/api/seguranca/redefinir-senha' and (
+        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca')) or
+        (path.startswith('/api/relatorios/') and path.endswith('/imagens') and request.method in ('POST','PUT','DELETE'))
+    ) and hasattr(request.state, 'user'):
+        registrar_auditoria(request, f'{request.method} {path}', 'sucesso')
     return response
 
 # === WHATSAPP ===
