@@ -1,7 +1,7 @@
-const CACHE = 'linkce-photos-v4';
+const CACHE = 'linkce-design-v5';
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
-const SHELL = ['/tecnico', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
+const SHELL = ['/tecnico', '/panel-assets/design-system.css?v=1', '/static/notices-tech.js?v=2', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
 
 // ── Instalação: pré-cache do shell ──────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -56,7 +56,7 @@ self.addEventListener('fetch', e => {
     }).catch(() => caches.match('/tecnico')));
     return;
   }
-  if (url.pathname.startsWith('/static/')) {
+  if ((url.pathname.startsWith('/static/') || url.pathname === '/panel-assets/design-system.css')) {
     e.respondWith(
       caches.match(request).then(hit => hit || fetchECachear(request))
     );

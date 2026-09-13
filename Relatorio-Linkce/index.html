@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <title>Gerador de Relatório Técnico</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="/static/manifest.json">
-<meta name="theme-color" content="#FF6B35">
+<meta name="theme-color" content="#182b3a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Linkce">
@@ -887,8 +887,9 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 .evidence-section{padding:16px;border:1px solid rgba(94,234,212,.22);border-radius:12px;background:rgba(15,23,42,.38)}.evidence-actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.evidence-actions button{flex:1;min-width:150px}.evidence-input{display:none}.evidence-preview{display:flex;gap:10px;overflow-x:auto;padding:4px 0;min-height:4px}.evidence-item{position:relative;flex:0 0 96px;height:96px;border-radius:10px;overflow:hidden;border:1px solid var(--border-color);background:#111827}.evidence-item img{width:100%;height:100%;object-fit:cover}.evidence-remove{position:absolute;top:4px;right:4px;width:26px;height:26px;min-height:26px;padding:0;border-radius:50%;background:#172033e8;border-color:#64748b;color:#fff;font-size:18px;line-height:1}.evidence-help{font-size:12px;color:var(--text-secondary);margin:4px 0 0}
 </style>
 <link rel="stylesheet" href="/static/technical-minimal.css?v=2">
+<link rel="stylesheet" href="/panel-assets/design-system.css?v=1">
 </head>
-<body>
+<body class="technical-app">
 
 <!-- BANNER OFFLINE -->
 <div id="offlineBanner" style="display:none;position:fixed;top:0;left:0;width:100%;background:linear-gradient(90deg,#e55a1f,#FF6B35);color:#fff;z-index:10000;padding:10px 16px;font-size:13px;font-weight:500;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
@@ -906,11 +907,11 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <p class="card-subtitle" style="margin-bottom:28px">Entre com seu acesso para continuar</p>
 <div id="loginError" class="login-error"></div>
 <div class="form-group">
-<label>Email</label>
+<label for="loginEmail">Email</label>
 <input type="email" id="loginEmail" placeholder="seu@email.com" autocomplete="username">
 </div>
 <div class="form-group">
-<label>Senha</label>
+<label for="loginPassword">Senha</label>
 <input type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
 </div>
 <button id="btnLogin" class="btn-submit" style="margin-top:8px">🔐 Entrar</button>
@@ -928,18 +929,19 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 </div>
 
 <div id="mainApp" class="container main-app-with-header" style="display:none">
-<div class="card">
-<h1 class="card-title">Relatório Técnico</h1>
-<p class="card-subtitle">Preencha os dados abaixo para gerar seu relatório técnico</p>
+<div class="card report-workspace">
+<div class="report-heading"><p class="eyebrow">LINKCE / OPERAÇÃO EM CAMPO</p><h1 class="card-title">Relatório Técnico</h1>
+<p class="card-subtitle">Registre o atendimento, confira as evidências e finalize em um só lugar.</p></div>
 <div id="mensagemErro" class="error"></div>
 <form id="formRelatorio">
+<section class="report-section attendance-section" aria-labelledby="attendanceTitle"><div class="form-section-heading"><span class="section-number">01</span><div><h2 id="attendanceTitle">Atendimento</h2><p>Descreva o problema e o que foi resolvido.</p></div></div><div class="field-grid">
 <div class="form-group">
 <label>📝 Relatório - Problema Encontrado</label>
-<textarea name="relatorio_texto" rows="4" placeholder="Descreva as atividades realizadas..." required></textarea>
+<textarea name="relatorio_texto" rows="4" placeholder="Qual problema foi encontrado no atendimento?" required></textarea>
 </div>
 <div class="form-group">
 <label>⚠️ Resolução do Problema</label>
-<textarea name="problema_tecnico" rows="4" placeholder="Descreva o problema identificado..." required></textarea>
+<textarea name="problema_tecnico" rows="4" placeholder="Como o problema foi resolvido? Descreva as ações realizadas." required></textarea>
 </div>
 <div class="form-group">
 <label>🔧 Equipamento(s) no cabo de rede</label>
@@ -964,6 +966,8 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <textarea name="equipamento_obs" rows="2" placeholder="Observações adicionais sobre o equipamento..."></textarea>
 </div>
 
+</div></section>
+<section class="report-section photos-section" aria-labelledby="photosTitle"><div class="form-section-heading"><span class="section-number">02</span><div><h2 id="photosTitle">Fotos e evidências</h2><p>Organize os registros e confira o checklist.</p></div></div>
 <div class="form-group evidence-section">
 <label>📷 Evidências do atendimento</label>
 <p class="evidence-help">Adicione até 30 fotos. Cada imagem pode ter até 8 MB.</p>
@@ -1041,7 +1045,9 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 </div>
 </div>
 
-<div class="form-group">
+</section>
+<section class="report-section materials-section" aria-labelledby="materialsTitle"><div class="form-section-heading"><span class="section-number">03</span><div><h2 id="materialsTitle">Sinal e materiais</h2><p>Informe a medição e registre os itens da O.S.</p></div></div><div class="field-grid">
+<div class="form-group signal-field">
 <label>📡 Maior Sinal RSSI</label>
 <input type="text" name="maior_sinal" placeholder="Ex: -45 dBm" required>
 </div>
@@ -1083,9 +1089,10 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <div class="material-list" id="listRecolhidos"></div>
 <textarea name="materiais_recolhidos" id="materiais_recolhidos" rows="3" readonly placeholder="Os materiais aparecerão aqui..."></textarea>
 </div>
-<button type="submit" class="btn-submit" id="btnSubmit">
-🚀 Gerar Relatório
-</button>
+</div></section>
+<div class="report-submit-bar"><p>Confira as informações antes de finalizar.</p><button type="submit" class="btn-submit" id="btnSubmit">
+Gerar relatório
+</button></div>
 </form>
 
 <!-- REPORT CONTAINER - NOW VISIBLE AFTER GENERATION -->
@@ -1095,7 +1102,6 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">
 <button type="button" class="btn-copiar" id="btnCopiar" style="flex:1;">📋 Copiar Relatório</button>
 <button type="button" class="btn-copiar" id="btnNovoRelatorio" style="flex:1;background:linear-gradient(135deg,#06D6A0,#04b386);">🆕 Novo Relatório</button>
-</div>
 </div>
 </div>
 </div>

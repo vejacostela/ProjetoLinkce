@@ -5,8 +5,8 @@
   "id": "/tecnico",
   "start_url": "/tecnico",
   "display": "standalone",
-  "background_color": "#0a0e27",
-  "theme_color": "#FF6B35",
+  "background_color": "#f3f5f7",
+  "theme_color": "#182b3a",
   "orientation": "portrait-primary",
   "lang": "pt-BR",
   "icons": [
@@ -25,4 +25,3 @@
   ],
   "scope": "/tecnico"
 }
-
