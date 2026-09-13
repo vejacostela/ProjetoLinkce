@@ -61,7 +61,10 @@ async def enforce_access(request, call_next):
                 raise HTTPException(403, "Acesso exclusivo do gestor.")
             if path.startswith("/api/backup") and role != "gestor":
                 raise HTTPException(403, "Acesso exclusivo do gestor.")
-            if path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
+            if path == "/api/seguranca/auditoria" and request.method == "GET":
+                if role not in ("gestor", "apoio"):
+                    raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
+            elif path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
                 if role != "gestor":
                     raise HTTPException(403, "Acesso exclusivo do gestor.")
             elif (path.startswith("/api/relatorios") and not (path.endswith("/imagens") and request.method == "POST")
@@ -1032,9 +1035,17 @@ async def criar_usuario(request: Request):
             "email": email,
             "password": senha,
             "user_metadata": {"nome": nome},
-            "app_metadata": {"role": cargo},
+            "app_metadata": {"role": cargo, "empresa_id": getattr(request.state, "empresa_id", DEFAULT_EMPRESA_ID)},
             "email_confirm": True,
         })
+        if EMPRESA_TABLE_AVAILABLE and result.user and getattr(request.state, "empresa_id", None):
+            try:
+                supabase_client.table("usuarios_empresas").upsert({
+                    "usuario_id": result.user.id, "empresa_id": request.state.empresa_id,
+                    "papel": cargo, "ativo": True,
+                }).execute()
+            except Exception:
+                logger.info("Vínculo do novo usuário à empresa indisponível.")
         logger.info("Usuário criado pelo gestor")
         return JSONResponse(content={"mensagem": f"Usuário '{nome}' criado como {cargo}", "id": result.user.id})
     except HTTPException:

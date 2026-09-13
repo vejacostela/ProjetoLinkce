@@ -26,3 +26,26 @@
 .metrics{grid-template-columns:repeat(5,minmax(0,1fr))}@media(max-width:1100px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .operation-columns{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(260px,1fr);gap:18px;padding:16px 18px 20px}.operation-columns h3{font-size:13px;margin:0 0 10px;color:var(--muted)}.operation-columns .technician-summary{padding:0;grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.daily-summary{display:grid;gap:8px}.daily-row{display:grid;grid-template-columns:78px 1fr 28px;align-items:center;gap:8px;font-size:12px}.daily-row>span{color:var(--muted);font-variant-numeric:tabular-nums}.daily-row i{display:block;height:12px;border-radius:99px;background:linear-gradient(90deg,var(--green),#6eb6ff);min-width:4px}.daily-row strong{text-align:right;font-size:12px}@media(max-width:700px){.operation-columns{grid-template-columns:1fr}.filter-actions button{flex:1 1 calc(50% - 8px)}}
 .health-status{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12px;white-space:nowrap}.health-status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.health-status[data-state="ok"]{color:#70dfae}.health-status[data-state="warn"]{color:#ffb454}@media(max-width:700px){.health-status{order:3;width:100%;justify-content:flex-end}.heading-actions{flex-wrap:wrap}}
+
+
+/* Operação: indicadores e controles adicionais */
+.heading-actions { display:flex; align-items:center; gap:.55rem; flex-wrap:wrap; justify-content:flex-end; }
+.heading-actions select { min-width:10rem; max-width:15rem; }
+.status-cell { font-weight:600; white-space:nowrap; }
+.status-sincronizado { color:#42d7a1; }
+.status-erro { color:#ff7a86; }
+.status-pendente, .status-pendente_fotos, .status-processando { color:#ffc04d; }
+.compact-action { font-size:.78rem; padding:.3rem .5rem; }
+.inline-filters { display:flex; flex-wrap:wrap; gap:.65rem; align-items:end; margin:.7rem 0 1rem; }
+.inline-filters label { min-width:10rem; flex:1 1 10rem; }
+.inline-filters button { flex:0 0 auto; }
+.company-list { display:grid; gap:.45rem; margin-top:1rem; }
+.company-list:empty { display:none; }
+.health-details { max-height:55vh; overflow:auto; white-space:pre-wrap; background:#0c1628; border:1px solid var(--border,#30415e); padding:1rem; border-radius:.5rem; font-size:.82rem; }
+@media (max-width: 760px) {
+  .heading-actions { justify-content:flex-start; }
+  .heading-actions select { max-width:100%; flex:1 1 100%; }
+  .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .filter-actions button { width:100%; }
+  .inline-filters label { min-width:100%; }
+}

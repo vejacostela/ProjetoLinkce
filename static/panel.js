@@ -65,6 +65,8 @@ async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type','application/json');
   headers.set('Authorization',`Bearer ${data.session.access_token}`);
+  const empresa = localStorage.getItem('linkce-empresa-id');
+  if (empresa) headers.set('X-Empresa-ID', empresa);
   const maxAttempts = options.method && options.method !== 'GET' ? 1 : 3;
   let response, body, lastError;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -107,6 +109,10 @@ function cell(row, text) { const td = document.createElement('td'); td.textConte
 function reportComplete(report) {
   return Boolean(report.equipamento_status && report.maior_sinal && hasLocation(report) && Number(report.imagens_count) > 0);
 }
+function statusEnvioLabel(value) {
+  const status = String(value || 'sincronizado').toLowerCase();
+  return status === 'erro' ? 'Falha' : status === 'pendente' || status === 'pendente_fotos' ? 'Pendente' : status === 'processando' ? 'Processando' : 'Sincronizado';
+}
 function filteredReports(reports) {
   const location = $('locationFilter')?.value || '';
   const photos = $('photosFilter')?.value || '';
@@ -134,11 +140,25 @@ function render(data) {
     cell(tr,dateLabel(r.criado_em)); cell(tr,r.tecnico); cell(tr,r.equipamento_status || 'Não informado');
     cell(tr,hasLocation(r) ? 'Disponível' : 'Não informada');
     cell(tr,Number(r.imagens_count) > 0 ? `${r.imagens_count} imagem(ns)` : 'Nenhuma');
+    const status = String(r.status_envio || 'sincronizado').toLowerCase();
+    const statusCell = cell(tr, status === 'erro' ? 'Falha' : status === 'pendente' || status === 'pendente_fotos' ? 'Pendente' : status === 'processando' ? 'Processando' : 'Sincronizado');
+    statusCell.className = 'status-cell status-' + status.replace(/[^a-z_]/g, '');
     const completeness = cell(tr,reportComplete(r) ? 'Completo' : 'Revisar');
     completeness.className = reportComplete(r) ? 'complete-cell' : 'incomplete-cell';
+    const actions = document.createElement('td');
     const button = document.createElement('button'); button.textContent = 'Abrir';
     button.setAttribute('aria-label',`Abrir relatório de ${r.tecnico}`);
-    button.addEventListener('click',() => openReport(r.id)); cell(tr,'').append(button); fragment.append(tr);
+    button.addEventListener('click',() => openReport(r.id)); actions.append(button);
+    if (status === 'erro' || status === 'pendente' || status === 'pendente_fotos') {
+      const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'compact-action'; retry.textContent = 'Tentar de novo';
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        try { await api('/api/relatorios/' + encodeURIComponent(r.id) + '/reprocessar', {method:'POST'}); await loadReports(); }
+        catch (error) { mostrarAlertaOperacao(error.message); retry.disabled = false; }
+      });
+      actions.append(document.createTextNode(' '), retry);
+    }
+    tr.append(actions); fragment.append(tr);
     if (map && hasLocation(r)) {
       const popup = document.createElement('div');
       const name = document.createElement('strong'); name.textContent = r.tecnico;
@@ -165,6 +185,8 @@ function ocultarAlertaOperacao() { const alerta = $('operationAlert'); if (alert
 function renderResumoOperacao(data) {
   const total = Number(data?.total) || 0, fotos = Number(data?.com_fotos) || 0, local = Number(data?.com_localizacao) || 0, pendentes = Number(data?.pendentes) || 0;
   $('total').textContent = total; $('summaryPhotos').textContent = fotos; $('summaryLocated').textContent = local; $('summaryPending').textContent = pendentes;
+  if ($('summaryFailed')) $('summaryFailed').textContent = Number(data?.falhas) || 0;
+  if ($('summaryPendingSend')) $('summaryPendingSend').textContent = Number(data?.pendentes_envio) || 0;
   $('summaryPeriod').textContent = total + ' relatório' + (total === 1 ? '' : 's') + ' no período';
   const list = $('technicianSummary'); list.replaceChildren();
   const items = Array.isArray(data?.por_tecnico) ? data.por_tecnico : [];
@@ -237,6 +259,92 @@ function startHealthMonitor() {
   loadHealth();
   healthTimer = setInterval(loadHealth, 60000);
 }
+async function baixarArquivoAutenticado(path, nome) {
+  try {
+    const {data, error} = await client.auth.getSession();
+    if (error || !data.session) throw new Error('Sua sessão expirou.');
+    const headers = new Headers({'Authorization': 'Bearer ' + data.session.access_token});
+    const empresa = localStorage.getItem('linkce-empresa-id');
+    if (empresa) headers.set('X-Empresa-ID', empresa);
+    const response = await fetch(path, {headers, cache:'no-store'});
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || 'Não foi possível gerar o arquivo.');
+    }
+    const blob = await response.blob();
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = nome; link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  } catch (error) {
+    mostrarAlertaOperacao(error.message || 'Falha ao gerar o arquivo.');
+  }
+}
+async function loadEmpresas() {
+  const select = $('companySelect');
+  if (!select) return;
+  try {
+    const data = await api('/api/empresas');
+    const empresas = Array.isArray(data.empresas) ? data.empresas : [];
+    select.replaceChildren();
+    for (const empresa of empresas) {
+      const option = document.createElement('option');
+      option.value = empresa.id; option.textContent = empresa.nome || empresa.slug || empresa.id;
+      select.append(option);
+    }
+    if (!empresas.length) { select.hidden = true; return; }
+    const saved = localStorage.getItem('linkce-empresa-id');
+    const active = empresas.find(item => item.id === saved) || empresas[0];
+    select.value = active.id;
+    if (saved !== active.id) localStorage.setItem('linkce-empresa-id', active.id);
+    select.hidden = false;
+    if (select.dataset.ready !== '1') {
+      select.dataset.ready = '1';
+      select.addEventListener('change', () => {
+        localStorage.setItem('linkce-empresa-id', select.value);
+        offset = 0; loadReports();
+      });
+    }
+  } catch (error) {
+    select.hidden = true;
+    mostrarAlertaOperacao('Não foi possível carregar as empresas: ' + error.message);
+  }
+}
+async function abrirSaudeDetalhada() {
+  const dialog = $('healthDialog');
+  if (!dialog) return;
+  const body = $('healthDetailsBody'); const status = $('healthDetailsStatus');
+  body.textContent = 'Consultando...'; status.textContent = '';
+  if (!dialog.open) dialog.showModal();
+  try {
+    const data = await api('/api/saude');
+    body.textContent = JSON.stringify(data, null, 2);
+  } catch (error) {
+    status.textContent = error.message;
+    body.textContent = 'Não foi possível consultar a saúde do sistema.';
+  }
+}
+async function loadAudit() {
+  const body = $('auditHistory');
+  if (!body) return;
+  const params = new URLSearchParams({limite:'100'});
+  if ($('auditUser')?.value.trim()) params.set('usuario_email', $('auditUser').value.trim());
+  if ($('auditAction')?.value.trim()) params.set('acao', $('auditAction').value.trim());
+  if ($('auditResult')?.value) params.set('resultado', $('auditResult').value);
+  try {
+    const data = await api('/api/seguranca/auditoria?' + params);
+    const rows = Array.isArray(data.auditoria) ? data.auditoria : [];
+    const fragment = document.createDocumentFragment();
+    for (const item of rows) {
+      const tr = document.createElement('tr');
+      for (const value of [dateLabel(item.criado_em), item.acao, item.rota, item.resultado]) cell(tr, value || '—');
+      fragment.append(tr);
+    }
+    body.replaceChildren(fragment);
+    if ($('auditHistoryEmpty')) $('auditHistoryEmpty').hidden = rows.length !== 0;
+  } catch (error) {
+    body.replaceChildren();
+    if ($('auditHistoryEmpty')) { $('auditHistoryEmpty').hidden = false; $('auditHistoryEmpty').textContent = error.message; }
+  }
+}
 async function enter(user) {
   const role = user.app_metadata?.role;
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
@@ -246,7 +354,7 @@ async function enter(user) {
   document.querySelectorAll('[data-management-target]').forEach(b => b.hidden = role !== 'gestor');
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
-  initMap(); defaultDates(); applyFilters();
+  initMap(); defaultDates(); await loadEmpresas(); applyFilters();
 }
 function applyFilters() {
   if ($('start').value > $('end').value) { $('status').textContent = 'A data inicial deve ser anterior ou igual à final.'; return; }
@@ -328,20 +436,35 @@ function exportReports() {
   const reports = filteredReports(currentReports);
   if (!reports.length) { $('status').textContent = 'Nenhum relatório disponível para exportar.'; return; }
   const lines = [
-    ['Data e hora','Técnico','Cabeamento','Localização','Fotos','Completude'].map(csvValue).join(';'),
-    ...reports.map(r => [dateLabel(r.criado_em),r.tecnico,r.equipamento_status || 'Não informado',hasLocation(r) ? `${r.latitude}, ${r.longitude}` : 'Não informada',Number(r.imagens_count) || 0,reportComplete(r) ? 'Completo' : 'Revisar'].map(csvValue).join(';'))
+    ['Data e hora','Técnico','Cabeamento','Localização','Fotos','Status','Completude'].map(csvValue).join(';'),
+    ...reports.map(r => [dateLabel(r.criado_em),r.tecnico,r.equipamento_status || 'Não informado',hasLocation(r) ? `${r.latitude}, ${r.longitude}` : 'Não informada',Number(r.imagens_count) || 0,statusEnvioLabel(r.status_envio),reportComplete(r) ? 'Completo' : 'Revisar'].map(csvValue).join(';'))
   ];
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
   const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `relatorios-linkce-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
 }
 $('exportCsv').addEventListener('click', exportReports);
+$('exportFullCsv')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=csv', 'linkce-relatorios.csv'));
+$('downloadBackup')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=zip&incluir_imagens=true', 'linkce-backup.zip'));
+$('healthDetails')?.addEventListener('click', abrirSaudeDetalhada);
+$('auditFilters')?.addEventListener('submit', event => { event.preventDefault(); loadAudit(); });
+$('companyForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  if (currentUser?.app_metadata?.role !== 'gestor') return;
+  const button = $('saveCompany'); button.disabled = true; $('companyStatus').textContent = 'Criando empresa...';
+  try {
+    const data = await api('/api/empresas', {method:'POST', body:JSON.stringify({nome:$('companyName').value.trim(), slug:$('companySlug').value.trim()})});
+    $('companyStatus').textContent = 'Empresa criada: ' + (data.empresa?.nome || 'ok');
+    event.target.reset(); await loadEmpresas();
+  } catch(error) { $('companyStatus').textContent = error.message; }
+  finally { button.disabled = false; }
+});
 $('printReports').addEventListener('click',()=>window.print());
 $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-PAGE_SIZE);loadReports();});
 $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
 function showManagement(section = '') {
   document.getElementById('noticePanel')?.setAttribute('hidden','');
-  const sections = {user:'managementUser', password:'managementPassword', bank:'managementBank'};
+  const sections = {user:'managementUser', password:'managementPassword', bank:'managementBank', companies:'managementCompanies'};
   $('managementHome').hidden = Boolean(section);
   Object.values(sections).forEach(id => $(id).hidden = sections[section] !== id);
 }
@@ -354,6 +477,7 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   if(target === 'user') $('userStatus').textContent='';
   if(target === 'password') { $('passwordManagerForm').reset(); $('passwordStatus').textContent=''; await loadPasswordHistory(); }
   if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; }
+  if(target === 'companies') { $('companyStatus').textContent=''; await loadEmpresas(); }
 }));
 document.querySelectorAll('[data-management-back]').forEach(button=>button.addEventListener('click',()=>showManagement()));
 $('managementDialog').addEventListener('close',()=>{showManagement(); clearBankPreview();});

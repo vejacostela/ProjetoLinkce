@@ -1177,6 +1177,8 @@ async function apiFetch(url, options = {}) {
   try { session = (await sbClient.auth.getSession()).data.session; } catch (_) {}
   const headers = new Headers(options.headers || {});
   if (session?.access_token) headers.set('Authorization', 'Bearer ' + session.access_token);
+  const empresa = localStorage.getItem('linkce-empresa-id');
+  if (empresa) headers.set('X-Empresa-ID', empresa);
   return fetch(url, { ...options, headers });
 }
 
@@ -1834,7 +1836,7 @@ async function sincronizarAgora() {
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg => {
     const worker = navigator.serviceWorker.controller || reg.active || reg.waiting;
-    worker?.postMessage({ type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id });
+    worker?.postMessage({ type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id, empresaId: localStorage.getItem('linkce-empresa-id') || null });
     // Background Sync API: o browser deduplica — não dispara duas vezes
     if ('sync' in reg) {
       reg.sync.register('sync-relatorios').catch(() => worker?.postMessage({ type: 'SYNC_NOW' }));
@@ -1860,7 +1862,7 @@ if ('serviceWorker' in navigator) {
     .catch(err => console.error('❌ SW erro:', err));
 
   navigator.serviceWorker.addEventListener('message', e => {
-    const { type, enviados, total } = e.data || {};
+    const { type, enviados, total, failed, pending } = e.data || {};
 
     if (type === 'SYNC_CONCLUIDO') {
       mostrarToastSistema(`✅ ${enviados} relatório${enviados > 1 ? 's' : ''} sincronizado${enviados > 1 ? 's' : ''} com sucesso!`);
@@ -1868,10 +1870,16 @@ if ('serviceWorker' in navigator) {
       atualizarBannerOffline();
     }
 
+    if (type === 'SYNC_ERRO') {
+      mostrarToastSistema(`⚠️ ${failed || e.data.falhas || 0} item(ns) aguardando conexão ou revisão.`);
+      pedirContagemFila();
+    }
+
     if (type === 'CONTAGEM_FILA') {
       const badge = document.getElementById('badgePendente');
-      if (total > 0) {
-        badge.textContent = `${total} pendente${total > 1 ? 's' : ''}`;
+      const totalItens = Number(total) || 0, falhas = Number(failed) || 0;
+      if (totalItens > 0) {
+        badge.textContent = falhas ? `${totalItens} na fila · ${falhas} falha${falhas > 1 ? 's' : ''}` : `${totalItens} pendente${totalItens > 1 ? 's' : ''}`;
         badge.style.display = 'inline-block';
       } else {
         badge.style.display = 'none';
