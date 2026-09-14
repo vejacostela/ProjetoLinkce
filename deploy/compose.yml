@@ -1,0 +1,36 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: .env
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request,json; r=json.load(urllib.request.urlopen('http://localhost:8000/health', timeout=10)); assert r['status']=='ok'"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      LINKCE_DOMAIN: ${LINKCE_DOMAIN:?Defina LINKCE_DOMAIN em deploy/.env}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+volumes:
+  caddy_data:
+  caddy_config:

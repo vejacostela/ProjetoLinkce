@@ -44,8 +44,9 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         try:
             user = await authenticate(request)
+            requested_empresa = None if path == '/api/empresas' and request.method == 'GET' else request.headers.get("X-Empresa-ID")
+            request.state.empresa_id = empresa_id_do_usuario(user, requested_empresa)
             role = role_of(user)
-            request.state.empresa_id = empresa_id_do_usuario(user, request.headers.get("X-Empresa-ID"))
             if path.startswith('/api/avisos') and request.method != 'GET' and role not in ('gestor', 'apoio'):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
             if path == '/api/avisos/historico' and role not in ('gestor', 'apoio'):
@@ -128,13 +129,7 @@ def registrar_historico_aviso(request: Request, acao: str, *, modelo_id=None,
         }
         if NOTICE_TENANT_AVAILABLE:
             payload['empresa_id'] = getattr(request.state, 'empresa_id', DEFAULT_EMPRESA_ID)
-        try:
-            supabase_client.table('avisos_historico').insert(payload).execute()
-        except Exception:
-            if 'empresa_id' not in payload:
-                raise
-            payload.pop('empresa_id', None)
-            supabase_client.table('avisos_historico').insert(payload).execute()
+        supabase_client.table('avisos_historico').insert(payload).execute()
     except Exception as exc:
         logger.warning('Histórico de avisos indisponível: %s', exc)
 
@@ -151,13 +146,7 @@ def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso')
         }
         if AUDIT_TENANT_AVAILABLE:
             payload['empresa_id'] = getattr(request.state, 'empresa_id', DEFAULT_EMPRESA_ID)
-        try:
-            supabase_client.table('auditoria_gestao').insert(payload).execute()
-        except Exception:
-            if 'empresa_id' not in payload:
-                raise
-            payload.pop('empresa_id', None)
-            supabase_client.table('auditoria_gestao').insert(payload).execute()
+        supabase_client.table('auditoria_gestao').insert(payload).execute()
     except Exception as exc:
         logger.warning('Auditoria indisponível: %s', exc)
 
@@ -204,17 +193,18 @@ async def salvar_modelo_aviso(request: Request):
         modelo_id = int(data['id']) if data.get('id') else None
         if modelo_id:
             payload['id'] = modelo_id
-        existentes = supabase_client.table('avisos_modelos').select('id,titulo').execute().data or []
+        existentes = aplicar_empresa_aviso(supabase_client.table('avisos_modelos').select('id,titulo'), request).execute().data or []
+        if modelo_id and not any(str(item['id']) == str(modelo_id) for item in existentes):
+            raise HTTPException(404, 'Mensagem não encontrada nesta empresa.')
         if any(str(item.get('titulo', '')).casefold() == titulo.casefold()
                and str(item.get('id')) != str(modelo_id) for item in existentes):
             raise HTTPException(409, 'Já existe uma mensagem com este nome. Escolha outro nome.')
-        try:
-            supabase_client.table('avisos_modelos').upsert(payload).execute()
-        except Exception:
-            if 'empresa_id' not in payload:
-                raise
-            payload.pop('empresa_id', None)
-            supabase_client.table('avisos_modelos').upsert(payload).execute()
+        if modelo_id:
+            payload.pop('id', None)
+            aplicar_empresa_aviso(supabase_client.table('avisos_modelos').update(payload)
+                                  .eq('id', modelo_id), request).execute()
+        else:
+            supabase_client.table('avisos_modelos').insert(payload).execute()
         registrar_historico_aviso(request, 'mensagem_atualizada' if modelo_id else 'mensagem_criada',
                                   modelo_id=modelo_id, titulo=titulo, mensagem=mensagem)
         return {'mensagem': 'Mensagem salva.'}
@@ -226,12 +216,17 @@ async def salvar_modelo_aviso(request: Request):
 @app.delete('/api/avisos/modelos/{modelo_id}')
 async def excluir_modelo_aviso(modelo_id: int, request: Request):
     try:
-        existente = (supabase_client.table('avisos_modelos').select('id,titulo,mensagem')
-                     .eq('id', modelo_id).maybe_single().execute().data or {})
-        supabase_client.table('avisos_modelos').delete().eq('id', modelo_id).execute()
+        rows = aplicar_empresa_aviso(supabase_client.table('avisos_modelos').select('id,titulo,mensagem')
+                     .eq('id', modelo_id), request).execute().data or []
+        if not rows:
+            raise HTTPException(404, 'Mensagem não encontrada nesta empresa.')
+        existente = rows[0]
+        aplicar_empresa_aviso(supabase_client.table('avisos_modelos').delete().eq('id', modelo_id), request).execute()
         registrar_historico_aviso(request, 'mensagem_excluida', modelo_id=modelo_id,
                                   titulo=existente.get('titulo', ''), mensagem=existente.get('mensagem', ''))
         return {'mensagem': 'Mensagem excluída.'}
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(503, 'Não foi possível excluir a mensagem.')
 
@@ -265,13 +260,10 @@ async def salvar_aviso(request: Request):
                 payload['id'] = existente[0].get('id')
         else:
             payload['id'] = 1
-        try:
-            supabase_client.table('avisos_operacao').upsert(payload).execute()
-        except Exception:
-            if 'empresa_id' not in payload:
-                raise
-            payload.pop('empresa_id', None)
-            payload['id'] = 1
+        if NOTICE_TENANT_AVAILABLE:
+            payload.pop('id', None)
+            supabase_client.table('avisos_operacao').upsert(payload, on_conflict='empresa_id').execute()
+        else:
             supabase_client.table('avisos_operacao').upsert(payload).execute()
         registrar_historico_aviso(request, acao, mensagem=mensagem.strip(), bloqueado=bloqueado)
         return {'mensagem': 'Aviso atualizado.'}
@@ -349,34 +341,56 @@ def _metadata_usuario(user: dict):
     return metadata
 
 def empresa_id_do_usuario(user: dict, requested: str = None):
-    metadata = _metadata_usuario(user or {})
-    claimed = metadata.get("empresa_id") or metadata.get("tenant_id") or DEFAULT_EMPRESA_ID
+    # user_metadata pode ser editado pelo próprio usuário: nunca autoriza empresa.
+    metadata = (user or {}).get("app_metadata") or {}
+    claimed = metadata.get("empresa_id") or DEFAULT_EMPRESA_ID
     try:
-        claimed = str(UUID(str(claimed)))
+        empresa = str(UUID(str(requested or claimed)))
     except (ValueError, TypeError, AttributeError):
-        claimed = DEFAULT_EMPRESA_ID
+        raise HTTPException(422, "Identificador da empresa inválido.")
+    if not EMPRESA_TABLE_AVAILABLE:
+        if empresa != DEFAULT_EMPRESA_ID:
+            raise HTTPException(403, "Empresa não autorizada.")
+        return empresa
+    if not (supabase_client and TENANT_COLUMN_AVAILABLE and NOTICE_TENANT_AVAILABLE and AUDIT_TENANT_AVAILABLE):
+        raise HTTPException(503, "Instalação incompleta. Aplique as migrações do banco e reinicie o serviço.")
     try:
-        requested_id = str(UUID(str(requested))) if requested else None
-    except (ValueError, TypeError, AttributeError):
-        requested_id = None
-    if not requested_id or requested_id == claimed:
-        return claimed
-    if not (supabase_client and EMPRESA_TABLE_AVAILABLE and (user or {}).get("id")):
-        return claimed
-    try:
-        membership = (supabase_client.table("usuarios_empresas")
-                      .select("empresa_id")
-                      .eq("usuario_id", user["id"])
-                      .eq("empresa_id", requested_id)
-                      .eq("ativo", True).limit(1).execute())
-        if membership.data:
-            return requested_id
+        membership = (supabase_client.table("usuarios_empresas").select("papel")
+                      .eq("usuario_id", user["id"]).eq("empresa_id", empresa)
+                      .eq("ativo", True).limit(1).execute().data or [])
+        active = (supabase_client.table("empresas").select("id").eq("id", empresa)
+                  .eq("ativo", True).limit(1).execute().data or [])
+        if not membership or not active:
+            raise HTTPException(403, "Seu usuário não tem acesso ativo a esta empresa.")
+        papel = membership[0].get("papel")
+        if papel not in PERMISSIONS:
+            raise HTTPException(403, "Perfil não autorizado.")
+        user["app_metadata"] = {**metadata, "role": papel}
+        return empresa
+    except HTTPException:
+        raise
     except Exception:
-        logger.info("Validação de empresa indisponível; mantendo empresa padrão.")
-    return claimed
+        raise HTTPException(503, "Não foi possível verificar o acesso à empresa.")
+
+
+def exigir_usuario_da_empresa(usuario_id, request):
+    if not EMPRESA_TABLE_AVAILABLE:
+        return
+    membros = (supabase_client.table("usuarios_empresas").select("empresa_id")
+               .eq("usuario_id", str(usuario_id)).eq("ativo", True).execute().data or [])
+    empresa = request.state.empresa_id
+    # A senha é global no Auth. Um gestor local não pode alterá-la se houver
+    # vínculos ativos em outras empresas.
+    if not membros or any(item["empresa_id"] != empresa for item in membros):
+        raise HTTPException(403, "Use a recuperação pelo titular para contas de outras empresas ou com múltiplos vínculos.")
+
 
 def aplicar_empresa(query, empresa_id):
-    return query.eq("empresa_id", empresa_id) if TENANT_COLUMN_AVAILABLE and empresa_id else query
+    if TENANT_COLUMN_AVAILABLE and empresa_id:
+        return query.eq("empresa_id", empresa_id)
+    if EMPRESA_TABLE_AVAILABLE:
+        raise HTTPException(503, "Filtro de empresa indisponível.")
+    return query
 
 def aplicar_empresa_aviso(query, request=None):
     if NOTICE_TENANT_AVAILABLE:
@@ -451,15 +465,15 @@ def salvar_relatorio(dados: dict):
         for key in ("status_envio", "tentativas_envio", "ultima_tentativa_em",
                     "sincronizado_em", "erro_envio", "origem_envio"):
             payload.pop(key, None)
-    opcionais = ("empresa_id", "status_envio", "tentativas_envio", "ultima_tentativa_em",
+    opcionais = ("status_envio", "tentativas_envio", "ultima_tentativa_em",
                  "sincronizado_em", "erro_envio", "origem_envio")
     try:
         result = supabase_client.table("relatorios").upsert(
             payload, on_conflict="id", ignore_duplicates=True).execute()
         if result.data:
             return True
-        existing = (supabase_client.table("relatorios").select("id,user_id")
-                    .eq("id", payload["id"]).execute())
+        existing = (aplicar_empresa(supabase_client.table("relatorios").select("id,user_id")
+                    .eq("id", payload["id"]), payload.get("empresa_id")).execute())
         if not existing.data or existing.data[0].get("user_id") != payload["user_id"]:
             raise HTTPException(409, "Identificador de envio já utilizado.")
         return False
@@ -475,8 +489,8 @@ def salvar_relatorio(dados: dict):
                     payload, on_conflict="id", ignore_duplicates=True).execute()
                 if result.data:
                     return True
-                existing = (supabase_client.table("relatorios").select("id,user_id")
-                            .eq("id", payload["id"]).execute())
+                existing = (aplicar_empresa(supabase_client.table("relatorios").select("id,user_id")
+                            .eq("id", payload["id"]), payload.get("empresa_id")).execute())
                 if not existing.data or existing.data[0].get("user_id") != payload["user_id"]:
                     raise HTTPException(409, "Identificador de envio já utilizado.")
                 return False
@@ -908,50 +922,64 @@ async def listar_empresas(request: Request):
     if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
         return {"empresas": [{"id": DEFAULT_EMPRESA_ID, "nome": "Empresa principal", "slug": "principal", "ativo": True}]}
     try:
-        query = supabase_client.table("empresas").select("id,nome,slug,ativo,criado_em")
-        if role_of(getattr(request.state, "user", {}) or {}) != "gestor":
-            query = query.eq("id", getattr(request.state, "empresa_id", DEFAULT_EMPRESA_ID))
-        result = query.eq("ativo", True).order("nome").execute()
+        memberships = (supabase_client.table("usuarios_empresas").select("empresa_id")
+                       .eq("usuario_id", request.state.user["id"]).eq("ativo", True).execute().data or [])
+        ids = [item["empresa_id"] for item in memberships]
+        if not ids:
+            return {"empresas": []}
+        result = (supabase_client.table("empresas").select("*").in_("id", ids)
+                  .eq("ativo", True).order("nome").execute())
         return {"empresas": result.data or []}
     except Exception:
-        logger.exception("Falha ao consultar empresas")
-        raise HTTPException(503, "Empresas indisponíveis. Execute a migração de operação.")
+        raise HTTPException(503, "Não foi possível consultar suas empresas.")
 
 @app.post("/api/empresas")
 async def criar_empresa(request: Request):
     if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
-        raise HTTPException(409, "Execute a migração de operação no Supabase antes de criar empresas.")
+        raise HTTPException(409, "Aplique o instalador do banco antes de criar empresas.")
     try:
         data = await request.json()
-        nome = data.get("nome", "").strip() if isinstance(data, dict) else ""
-        slug = data.get("slug", "").strip().lower() if isinstance(data, dict) else ""
-        if not nome or len(nome) > 120:
+        nome = data.get("nome", "").strip()
+        slug = re.sub(r"[^a-z0-9]+", "-", data.get("slug", "").strip().lower() or nome.lower()).strip("-")
+        modo = data.get("modo_hospedagem", "cloud")
+        dominio = data.get("dominio", "").strip().lower()
+        if not 2 <= len(nome) <= 120 or not 2 <= len(slug) <= 80:
             raise ValueError()
-        slug = re.sub(r"[^a-z0-9]+", "-", slug or nome.lower()).strip("-")[:80]
-        if len(slug) < 2:
+        if modo not in ("cloud", "servidor_proprio"):
+            raise ValueError()
+        if dominio and (len(dominio) > 253 or not re.fullmatch(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}", dominio)):
             raise ValueError()
     except (ValueError, AttributeError, TypeError):
-        raise HTTPException(422, "Informe um nome e um identificador válidos.")
+        raise HTTPException(422, "Revise nome, identificador, hospedagem e domínio (sem https:// ou caminhos).")
     try:
-        actor = request.state.user
-        result = supabase_client.table("empresas").insert({
-            "nome": nome, "slug": slug, "ativo": True,
-            "criado_por": actor.get("id"),
+        result = supabase_client.rpc("linkce_criar_empresa", {
+            "p_nome": nome, "p_slug": slug, "p_usuario_id": request.state.user["id"],
+            "p_modo": modo, "p_dominio": dominio,
         }).execute()
-        empresa = (result.data or [{}])[0]
-        if empresa.get("id") and actor.get("id"):
-            try:
-                supabase_client.table("usuarios_empresas").upsert({
-                    "usuario_id": actor["id"], "empresa_id": empresa["id"], "papel": "gestor", "ativo": True,
-                }).execute()
-            except Exception:
-                logger.info("Vínculo inicial de empresa indisponível.")
-        return JSONResponse(content={"empresa": empresa}, status_code=201)
+        if not result.data:
+            raise ValueError("Empresa não retornada")
+        return JSONResponse(content={"empresa": result.data[0]}, status_code=201)
     except Exception as exc:
-        if "duplicate" in str(exc).lower() or "unique" in str(exc).lower():
+        if getattr(exc, "code", "") == "23505":
             raise HTTPException(409, "Já existe uma empresa com esse identificador.")
-        logger.exception("Falha ao criar empresa")
-        raise HTTPException(503, "Não foi possível criar a empresa.")
+        raise HTTPException(503, "Cadastro não confirmado. Verifique se o instalador do banco está atualizado.")
+
+@app.get("/api/empresas/pacote-instalacao")
+async def pacote_instalacao(request: Request):
+    if role_of(request.state.user) != "gestor":
+        raise HTTPException(403, "Acesso exclusivo do gestor.")
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        # Somente arquivos versionados de instalação, nunca .env ou dados.
+        for folder in ("database", "deploy"):
+            for path in sorted((root / folder).rglob("*")):
+                if path.is_file() and (path.suffix in (".sql", ".md", ".py", ".yml") or path.name in ("Dockerfile", "Caddyfile", ".env.example")):
+                    archive.write(path, path.relative_to(root).as_posix())
+        archive.writestr("LEIA-ME.txt", "Clone o ProjetoLinkce e extraia este pacote na raiz. Siga database/README.md. O SQL instala a estrutura; fotos e dados anteriores exigem migração separada.")
+    return StreamingResponse(iter([buffer.getvalue()]), media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="linkce-instalacao.zip"'})
 
 @app.get("/api/backup")
 async def gerar_backup(request: Request, formato: str = Query("json", pattern="^(json|csv|zip)$"),
@@ -1051,7 +1079,9 @@ async def criar_usuario(request: Request):
                     "papel": cargo, "ativo": True,
                 }).execute()
             except Exception:
-                logger.info("Vínculo do novo usuário à empresa indisponível.")
+                # Compensa a criação para não deixar uma conta sem empresa.
+                admin.auth.admin.delete_user(result.user.id)
+                raise HTTPException(503, "Usuário não criado: não foi possível vincular a empresa.")
         logger.info("Usuário criado pelo gestor")
         return JSONResponse(content={"mensagem": f"Usuário '{nome}' criado como {cargo}", "id": result.user.id})
     except HTTPException:
@@ -1123,7 +1153,7 @@ async def consultar_auditoria(
                 "total": total, "has_more": offset + len(result.data or []) < total}
     except Exception as exc:
         # Older installations may not yet have empresa_id; retry with the stable columns.
-        if "empresa_id" in str(exc).lower():
+        if not EMPRESA_TABLE_AVAILABLE and "empresa_id" in str(exc).lower():
             try:
                 query = (supabase_client.table("auditoria_gestao")
                          .select("id,acao,metodo,rota,resultado,usuario_email,usuario_id,criado_em", count="exact"))
@@ -1143,13 +1173,15 @@ async def consultar_auditoria(
         raise HTTPException(503, "Auditoria indisponível. Execute a migração de segurança no Supabase.")
 
 @app.get("/api/seguranca/historico-senhas")
-async def historico_senhas(limite: int = Query(30, ge=1, le=100)):
+async def historico_senhas(request: Request, limite: int = Query(30, ge=1, le=100)):
     if not supabase_client:
         raise HTTPException(status_code=503, detail="Banco de dados não configurado.")
     try:
-        result = supabase_client.table("historico_redefinicao_senhas").select(
-            "id,criado_em,gestor_email,usuario_email,motivo"
-        ).order("criado_em", desc=True).limit(limite).execute()
+        query = supabase_client.table("historico_redefinicao_senhas").select(
+            "id,criado_em,gestor_email,usuario_email,motivo")
+        if EMPRESA_TABLE_AVAILABLE:
+            query = query.eq("empresa_id", request.state.empresa_id)
+        result = query.order("criado_em", desc=True).limit(limite).execute()
         return JSONResponse(content={"historico": result.data or []})
     except Exception:
         logger.exception("Falha ao consultar histórico de senhas")
@@ -1177,6 +1209,7 @@ async def redefinir_senha(request: Request):
         supabase_client.table("historico_redefinicao_senhas").select("id", head=True).limit(1).execute()
         admin = _admin_client()
         target = _find_user_by_email(admin, email)
+        exigir_usuario_da_empresa(target.id, request)
         actor = request.state.user
         actor_email = actor.get("email", "")
         if not actor_email:
@@ -1185,6 +1218,7 @@ async def redefinir_senha(request: Request):
         supabase_client.table("historico_redefinicao_senhas").insert({
             "gestor_id": actor["id"], "gestor_email": actor_email.lower(),
             "usuario_id": target.id, "usuario_email": email, "motivo": motivo or None,
+            **({"empresa_id": request.state.empresa_id} if EMPRESA_TABLE_AVAILABLE else {}),
         }).execute()
         logger.info("Senha redefinida por gestor; auditoria registrada")
         return JSONResponse(content={"mensagem": "Senha redefinida e registrada no histórico.", "email": email})
@@ -1372,13 +1406,13 @@ async def substituir_imagem_relatorio(relatorio_id: UUID, imagem_id: UUID, reque
 
 # === API BANCO ===
 @app.get("/api/banco/previa")
-async def previa_limpeza(manter_dias: int = Query(30, ge=1, le=36500)):
+async def previa_limpeza(request: Request, manter_dias: int = Query(30, ge=1, le=36500)):
     if not supabase_client:
         raise HTTPException(503, "Banco indisponível.")
     limite = (datetime.now(timezone.utc) - timedelta(days=manter_dias)).isoformat()
     try:
-        total = supabase_client.table("relatorios").select("id", count="exact", head=True).execute()
-        antigos = supabase_client.table("relatorios").select("id", count="exact", head=True).lt("criado_em", limite).execute()
+        total = aplicar_empresa(supabase_client.table("relatorios").select("id", count="exact", head=True), request.state.empresa_id).execute()
+        antigos = aplicar_empresa(supabase_client.table("relatorios").select("id", count="exact", head=True), request.state.empresa_id).lt("criado_em", limite).execute()
         if total.count is None or antigos.count is None:
             raise ValueError("Contagem ausente")
         return {"total": total.count, "candidatos": antigos.count, "limite": limite}
@@ -1401,7 +1435,7 @@ async def executar_limpeza(request: Request):
     if not supabase_client:
         raise HTTPException(503, "Banco indisponível.")
     try:
-        resultado = supabase_client.table("relatorios").delete(count="exact", returning="minimal").lt("criado_em", limite.isoformat()).execute()
+        resultado = aplicar_empresa(supabase_client.table("relatorios").delete(count="exact", returning="minimal"), request.state.empresa_id).lt("criado_em", limite.isoformat()).execute()
         logger.info("Limpeza concluída pelo gestor %s; corte %s", request.state.user["id"], limite.isoformat())
         return {"concluido": True, "deletados": resultado.count, "limite": limite.isoformat()}
     except Exception:
@@ -1409,7 +1443,7 @@ async def executar_limpeza(request: Request):
         raise HTTPException(503, "Não foi possível confirmar a exclusão. Atualize a prévia antes de tentar novamente.")
 
 @app.get("/api/banco/stats")
-async def banco_stats():
+async def banco_stats(request: Request):
     if not supabase_client:
         raise HTTPException(status_code=503, detail="Banco de dados não configurado")
     resultado: dict = {
@@ -1417,6 +1451,8 @@ async def banco_stats():
         "size_bytes": 0, "por_dia": [], "rpc_ok": False,
     }
     try:
+        if EMPRESA_TABLE_AVAILABLE:
+            raise ValueError("Usar estatísticas filtradas por empresa")
         raw = supabase_client.rpc("get_relatorios_stats").execute()
         d = raw.data
         if isinstance(d, list):
@@ -1434,7 +1470,7 @@ async def banco_stats():
     except Exception as e:
         logger.warning(f"⚠️ RPC banco stats indisponível, usando fallback: {e}")
         try:
-            rows_res = supabase_client.table("relatorios").select("id, criado_em").order("criado_em").execute()
+            rows_res = aplicar_empresa(supabase_client.table("relatorios").select("id, criado_em"), request.state.empresa_id).order("criado_em").execute()
             rows = rows_res.data or []
             resultado["total_rows"] = len(rows)
             if rows:
@@ -1475,7 +1511,7 @@ async def banco_deletar(request: Request):
                     # Brasil UTC-3: início do dia = dt+3h UTC, fim = dt+27h UTC
                     inicio = (dt + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
                     fim    = (dt + timedelta(hours=27)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-                    res = admin.table("relatorios").delete().gte("criado_em", inicio).lt("criado_em", fim).execute()
+                    res = aplicar_empresa(admin.table("relatorios").delete(), request.state.empresa_id).gte("criado_em", inicio).lt("criado_em", fim).execute()
                     total_deletados += len(res.data) if res.data else 0
                 except Exception as ex:
                     logger.warning(f"⚠️ Erro ao deletar {dt_str}: {ex}")
@@ -1487,7 +1523,7 @@ async def banco_deletar(request: Request):
             if manter_dias < 1:
                 raise HTTPException(status_code=400, detail="manter_dias deve ser >= 1")
             limite = (datetime.now(timezone.utc) - timedelta(days=manter_dias)).isoformat()
-            res = admin.table("relatorios").delete().lt("criado_em", limite).execute()
+            res = aplicar_empresa(admin.table("relatorios").delete(), request.state.empresa_id).lt("criado_em", limite).execute()
             deletados = len(res.data) if res.data else 0
             logger.info(f"🗑️ Auto: {deletados} registro(s) (mantendo últimos {manter_dias} dias)")
             return JSONResponse(content={"deletados": deletados, "manter_dias": manter_dias})

@@ -284,6 +284,15 @@ async function loadEmpresas() {
   try {
     const data = await api('/api/empresas');
     const empresas = Array.isArray(data.empresas) ? data.empresas : [];
+    const list = $('companyList');
+    if (list) {
+      list.replaceChildren();
+      for (const empresa of empresas) {
+        const row = document.createElement('p');
+        row.textContent = `${empresa.nome} · ${empresa.modo_hospedagem === 'servidor_proprio' ? 'Servidor próprio' : 'Cloud'}${empresa.dominio ? ' · ' + empresa.dominio : ''}`;
+        list.append(row);
+      }
+    }
     select.replaceChildren();
     for (const empresa of empresas) {
       const option = document.createElement('option');
@@ -300,7 +309,7 @@ async function loadEmpresas() {
       select.dataset.ready = '1';
       select.addEventListener('change', () => {
         localStorage.setItem('linkce-empresa-id', select.value);
-        offset = 0; loadReports();
+        location.reload();
       });
     }
   } catch (error) {
@@ -308,6 +317,7 @@ async function loadEmpresas() {
     mostrarAlertaOperacao('Não foi possível carregar as empresas: ' + error.message);
   }
 }
+if ($('downloadInstaller')) $('downloadInstaller').addEventListener('click', () => baixarArquivoAutenticado('/api/empresas/pacote-instalacao', 'linkce-instalacao.zip'));
 async function abrirSaudeDetalhada() {
   const dialog = $('healthDialog');
   if (!dialog) return;
@@ -346,15 +356,17 @@ async function loadAudit() {
   }
 }
 async function enter(user) {
-  const role = user.app_metadata?.role;
+  await loadEmpresas();
+  const permissions = await api('/api/permissoes');
+  const role = permissions.role;
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
-  currentUser = user; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
+  currentUser = {...user, app_metadata:{...user.app_metadata, role}}; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('managementButton').hidden = false;
   document.querySelectorAll('[data-management-target]').forEach(b => b.hidden = role !== 'gestor');
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
-  initMap(); defaultDates(); await loadEmpresas(); applyFilters();
+  initMap(); defaultDates(); applyFilters();
 }
 function applyFilters() {
   if ($('start').value > $('end').value) { $('status').textContent = 'A data inicial deve ser anterior ou igual à final.'; return; }
@@ -452,7 +464,7 @@ $('companyForm')?.addEventListener('submit', async event => {
   if (currentUser?.app_metadata?.role !== 'gestor') return;
   const button = $('saveCompany'); button.disabled = true; $('companyStatus').textContent = 'Criando empresa...';
   try {
-    const data = await api('/api/empresas', {method:'POST', body:JSON.stringify({nome:$('companyName').value.trim(), slug:$('companySlug').value.trim()})});
+    const data = await api('/api/empresas', {method:'POST', body:JSON.stringify({nome:$('companyName').value.trim(), slug:$('companySlug').value.trim(), modo_hospedagem:$('companyHosting').value, dominio:$('companyDomain').value.trim()})});
     $('companyStatus').textContent = 'Empresa criada: ' + (data.empresa?.nome || 'ok');
     event.target.reset(); await loadEmpresas();
   } catch(error) { $('companyStatus').textContent = error.message; }
