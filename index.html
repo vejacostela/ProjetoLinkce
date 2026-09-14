@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Linkce · Gestão de campo</title>
-<meta name="description" content="Relatórios técnicos e localização dos atendimentos Linkce.">
+<title>Sistema de Campo · Gestão operacional</title>
+<meta name="description" content="Relatórios técnicos e localização dos atendimentos.">
 <link rel="stylesheet" href="/panel-assets/panel.css?v=5">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script>
-/* Linkce — cliente mínimo de autenticação Supabase servido pelo próprio domínio.
+/* Cliente mínimo de autenticação Supabase servido pelo próprio domínio.
    Mantém a API usada pelo painel e pela área técnica sem depender de CDN externo. */
 (function (root) {
   'use strict';
@@ -188,7 +188,7 @@
 <meta name="theme-color" content="#182b3a">
 </head>
 <body class="management-app">
-<header><a class="brand" href="/">LINKCE<span>Gestão de campo</span></a><nav aria-label="Navegação"><a href="/tecnico" target="_blank" rel="noopener">Área do técnico ↗</a><button id="managementButton" hidden>Gestão</button><button id="logout" hidden>Sair</button></nav></header>
+<header><a class="brand" href="/"><strong id="brandName">Sistema de Campo</strong><span id="brandTagline">Gestão operacional</span></a><nav aria-label="Navegação"><a href="/tecnico" target="_blank" rel="noopener">Área do técnico ↗</a><button id="managementButton" hidden>Gestão</button><button id="logout" hidden>Sair</button></nav></header>
 <main>
 <section id="login" class="login surface">
 <p class="eyebrow">ACESSO À OPERAÇÃO</p><h1>Entre no painel</h1><p class="muted">Use sua conta de gestor ou apoio.</p>

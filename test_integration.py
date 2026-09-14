@@ -6,7 +6,7 @@ import main
 class UnifiedTests(unittest.TestCase):
     def setUp(self): self.client=TestClient(main.app)
     def test_pages_and_assets_share_application(self):
-        for path, text in [('/', 'Atendimentos em campo'),('/tecnico','Gerador de Relatório Técnico'),('/recuperar-senha','Recuperar acesso'),('/nova-senha','passwordForm')]:
+        for path, text in [('/', 'Atendimentos em campo'),('/tecnico','Sistema de Campo · Relatório Técnico'),('/recuperar-senha','Recuperar acesso'),('/nova-senha','passwordForm')]:
             r=self.client.get(path)
             self.assertEqual(r.status_code,200,path)
             self.assertIn(text,r.text)

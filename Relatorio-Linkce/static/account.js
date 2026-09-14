@@ -59,12 +59,12 @@
         redirectTo: location.origin + '/nova-senha'
       });
       if (error) {
-        status(LinkceAuth.message(error));
+        status(CampoAuth.message(error));
       } else {
         status('Se houver uma conta elegível para esse email, você receberá as instruções. Confira também o spam.');
       }
     } catch (error) {
-      status(LinkceAuth.message(error));
+      status(CampoAuth.message(error));
     } finally {
       button.disabled = false;
     }
@@ -77,7 +77,7 @@
       return;
     }
     const password = el('password').value;
-    if (!LinkceAuth.validPassword(password, el('repeat').value)) {
+    if (!CampoAuth.validPassword(password, el('repeat').value)) {
       status('As senhas devem ser iguais e conter de 12 a 128 caracteres.');
       return;
     }
@@ -86,7 +86,7 @@
     try {
       const { error } = await client.auth.updateUser({ password });
       if (error) {
-        status(LinkceAuth.message(error));
+        status(CampoAuth.message(error));
         return;
       }
       recoveryReady = false;
@@ -98,10 +98,9 @@
       try { await client.auth.signOut({ scope: 'local' }); } catch (_) {}
       status('Senha alterada. Volte ao login e entre com a nova senha.');
     } catch (error) {
-      status(LinkceAuth.message(error));
+      status(CampoAuth.message(error));
     } finally {
       button.disabled = !recoveryReady;
     }
   });
 })();
-

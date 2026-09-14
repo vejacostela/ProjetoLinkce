@@ -1,4 +1,4 @@
-/* Linkce — shared visual layer. Loaded after legacy component styles.
+/* Camada visual compartilhada. Carregada após os estilos dos componentes.
    Scope presentation only; IDs, form names and application logic stay intact. */
 :root {
   color-scheme: light;

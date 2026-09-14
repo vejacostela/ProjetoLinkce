@@ -977,9 +977,9 @@ async def pacote_instalacao(request: Request):
             for path in sorted((root / folder).rglob("*")):
                 if path.is_file() and (path.suffix in (".sql", ".md", ".py", ".yml") or path.name in ("Dockerfile", "Caddyfile", ".env.example")):
                     archive.write(path, path.relative_to(root).as_posix())
-        archive.writestr("LEIA-ME.txt", "Clone o ProjetoLinkce e extraia este pacote na raiz. Siga database/README.md. O SQL instala a estrutura; fotos e dados anteriores exigem migração separada.")
+        archive.writestr("LEIA-ME.txt", "Extraia este pacote na raiz do sistema e siga database/README.md. O SQL instala a estrutura; fotos e dados anteriores exigem migração separada.")
     return StreamingResponse(iter([buffer.getvalue()]), media_type="application/zip",
-        headers={"Content-Disposition": 'attachment; filename="linkce-instalacao.zip"'})
+        headers={"Content-Disposition": 'attachment; filename="sistema-instalacao.zip"'})
 
 @app.get("/api/backup")
 async def gerar_backup(request: Request, formato: str = Query("json", pattern="^(json|csv|zip)$"),
@@ -997,7 +997,7 @@ async def gerar_backup(request: Request, formato: str = Query("json", pattern="^
                        .select("id,relatorio_id,criado_em,nome_original,tipo,tamanho_bytes,caminho")
                        .in_("relatorio_id", ids).order("criado_em").execute().data or [])
         criado = datetime.now(timezone.utc).isoformat()
-        nome_base = f"linkce-backup-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
+        nome_base = f"backup-operacional-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
         if formato == "json":
             return JSONResponse(content={"gerado_em": criado, "empresa_id": empresa_id,
                                          "relatorios": relatorios, "imagens": imagens})

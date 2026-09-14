@@ -2,16 +2,16 @@
 <html lang="pt-br">
 <head>
 <meta charset="UTF-8">
-<title>Gerador de Relatório Técnico</title>
+<title>Sistema de Campo · Relatório Técnico</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#182b3a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Linkce">
+<meta name="apple-mobile-web-app-title" content="Sistema de Campo">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script>
-/* Linkce — cliente mínimo de autenticação Supabase servido pelo próprio domínio.
+/* Cliente mínimo de autenticação Supabase servido pelo próprio domínio.
    Mantém a API usada pelo painel e pela área técnica sem depender de CDN externo. */
 (function (root) {
   'use strict';
@@ -930,7 +930,7 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 
 <div id="mainApp" class="container main-app-with-header" style="display:none">
 <div class="card report-workspace">
-<div class="report-heading"><p class="eyebrow">LINKCE / OPERAÇÃO EM CAMPO</p><h1 class="card-title">Relatório Técnico</h1>
+<div class="report-heading"><p class="eyebrow" id="brandEyebrow">OPERAÇÃO EM CAMPO</p><h1 class="card-title">Relatório Técnico</h1>
 <p class="card-subtitle">Registre o atendimento, confira as evidências e finalize em um só lugar.</p></div>
 <div id="mensagemErro" class="error"></div>
 <form id="formRelatorio">
@@ -1265,6 +1265,25 @@ function mostrarLogin() {
   document.getElementById('userHeader').style.display = 'none';
 }
 
+async function aplicarMarcaEmpresa(user) {
+  try {
+    const response = await apiFetch('/api/empresas');
+    if (!response.ok) return;
+    const empresas = (await response.json()).empresas || [];
+    const remembered = localStorage.getItem('linkce-empresa-id');
+    const fromProfile = user?.app_metadata?.empresa_id;
+    const empresa = empresas.find(item => item.id === remembered) || empresas.find(item => item.id === fromProfile) || empresas[0];
+    if (!empresa?.id) return;
+    localStorage.setItem('linkce-empresa-id', empresa.id);
+    const nome = String(empresa.nome || 'Sistema de Campo').trim() || 'Sistema de Campo';
+    document.title = `${nome} · Relatório Técnico`;
+    const eyebrow = document.getElementById('brandEyebrow');
+    if (eyebrow) eyebrow.textContent = `${nome.toUpperCase()} / OPERAÇÃO EM CAMPO`;
+  } catch (_) {
+    // A tela continua utilizável offline com a identificação genérica.
+  }
+}
+
 function mostrarApp(user) {
   iniciarExpiracaoSessao();
   notices.check();
@@ -1276,6 +1295,7 @@ function mostrarApp(user) {
   document.getElementById('userNome').textContent = '👤 ' + nome;
   document.getElementById('userBadge').textContent =
     role === 'gestor' ? '⚙️ Gestor' : role === 'apoio' ? '🛠️ Apoio' : '🔧 Técnico';
+  aplicarMarcaEmpresa(user);
   // All authorized profiles may fill reports in the technical area.
   carregarMateriais();
   restaurarRascunho();
@@ -1300,7 +1320,7 @@ document.getElementById('btnLogin').addEventListener('click', async () => {
     const { error } = await sbClient.auth.signInWithPassword({ email, password: senha });
     if (error) throw error;
   } catch (error) {
-    errDiv.textContent = window.LinkceAuth.message(error); errDiv.style.display = 'block';
+    errDiv.textContent = window.CampoAuth.message(error); errDiv.style.display = 'block';
   } finally {
     btn.textContent = '🔐 Entrar'; btn.disabled = false;
   }
@@ -1910,13 +1930,13 @@ installButton?.addEventListener('click', async () => {
   if (!deferredInstallPrompt) return;
   deferredInstallPrompt.prompt();
   const choice = await deferredInstallPrompt.userChoice;
-  if (choice.outcome === 'accepted') mostrarToastSistema('Aplicativo Linkce instalado neste celular.');
+  if (choice.outcome === 'accepted') mostrarToastSistema('Aplicativo instalado neste celular.');
   deferredInstallPrompt = null; installButton.hidden = true;
 });
 window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
   if (installButton) installButton.hidden = true;
-  mostrarToastSistema('Aplicativo Linkce instalado com sucesso.');
+  mostrarToastSistema('Aplicativo instalado com sucesso.');
 });
 
 // Verifica status de conexão ao carregar

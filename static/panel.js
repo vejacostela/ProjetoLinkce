@@ -48,6 +48,15 @@ function clearResults() {
   $('previous').disabled = true; $('next').disabled = true;
   $('mapStatus').textContent = '';
 }
+function applyBrand(empresa) {
+  const name = String(empresa?.nome || 'Sistema de Campo').trim() || 'Sistema de Campo';
+  const title = `${name} · Gestão operacional`;
+  const brand = $('brandName');
+  if (brand) brand.textContent = name;
+  const tagline = $('brandTagline');
+  if (tagline) tagline.textContent = 'Gestão operacional';
+  document.title = title;
+}
 function signedOut(message = '') {
   currentUser = null; requestVersion++; detailVersion++;
   currentReports = [];
@@ -304,6 +313,7 @@ async function loadEmpresas() {
     const active = empresas.find(item => item.id === saved) || empresas[0];
     select.value = active.id;
     if (saved !== active.id) localStorage.setItem('linkce-empresa-id', active.id);
+    applyBrand(active);
     select.hidden = false;
     if (select.dataset.ready !== '1') {
       select.dataset.ready = '1';
@@ -317,7 +327,7 @@ async function loadEmpresas() {
     mostrarAlertaOperacao('Não foi possível carregar as empresas: ' + error.message);
   }
 }
-if ($('downloadInstaller')) $('downloadInstaller').addEventListener('click', () => baixarArquivoAutenticado('/api/empresas/pacote-instalacao', 'linkce-instalacao.zip'));
+if ($('downloadInstaller')) $('downloadInstaller').addEventListener('click', () => baixarArquivoAutenticado('/api/empresas/pacote-instalacao', 'sistema-instalacao.zip'));
 async function abrirSaudeDetalhada() {
   const dialog = $('healthDialog');
   if (!dialog) return;
@@ -452,11 +462,11 @@ function exportReports() {
     ...reports.map(r => [dateLabel(r.criado_em),r.tecnico,r.equipamento_status || 'Não informado',hasLocation(r) ? `${r.latitude}, ${r.longitude}` : 'Não informada',Number(r.imagens_count) || 0,statusEnvioLabel(r.status_envio),reportComplete(r) ? 'Completo' : 'Revisar'].map(csvValue).join(';'))
   ];
   const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
-  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `relatorios-linkce-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+  const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `relatorios-campo-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
 }
 $('exportCsv').addEventListener('click', exportReports);
-$('exportFullCsv')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=csv', 'linkce-relatorios.csv'));
-$('downloadBackup')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=zip&incluir_imagens=true', 'linkce-backup.zip'));
+$('exportFullCsv')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=csv', 'relatorios-campo.csv'));
+$('downloadBackup')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=zip&incluir_imagens=true', 'backup-campo.zip'));
 $('healthDetails')?.addEventListener('click', abrirSaudeDetalhada);
 $('auditFilters')?.addEventListener('submit', event => { event.preventDefault(); loadAudit(); });
 $('companyForm')?.addEventListener('submit', async event => {
@@ -570,7 +580,7 @@ $('userForm').addEventListener('submit',async e=>{
     const {data,error}=await client.auth.getUser();
     if(data?.user && !error) await enter(data.user); else $('loginStatus').textContent='';
   }catch(error){
-    console.error('[Linkce] falha ao iniciar autenticação',error);
+    console.error('[Sistema de Campo] falha ao iniciar autenticação',error);
     // Se o cliente já foi criado, o login continua disponível mesmo que a
     // consulta inicial da sessão falhe ou seja interrompida pelo navegador.
     $('loginStatus').textContent=client

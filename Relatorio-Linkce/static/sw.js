@@ -1,4 +1,4 @@
-const CACHE = 'linkce-design-v5';
+const CACHE = 'gestao-campo-v6';
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
 const SHELL = ['/tecnico', '/panel-assets/design-system.css?v=1', '/static/notices-tech.js?v=2', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];

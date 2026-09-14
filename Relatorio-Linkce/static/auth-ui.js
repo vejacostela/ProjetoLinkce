@@ -1,5 +1,5 @@
 /* Shared user-facing errors. Never render raw provider responses or credentials. */
-window.LinkceAuth = {
+window.CampoAuth = {
   message(error) {
     if (error?.code === 'email_not_confirmed') return 'Confirme seu email antes de entrar.';
     if (error?.code === 'invalid_credentials') return 'Email ou senha incorretos.';
