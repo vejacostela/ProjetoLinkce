@@ -83,6 +83,15 @@ class TenantTests(unittest.TestCase):
         response = self.client.get('/api/empresas', headers={'X-Empresa-ID': B})
         self.assertEqual([row['id'] for row in response.json()['empresas']], [A])
 
+    def test_client_manager_cannot_manage_the_platform(self):
+        permissions = self.client.get('/api/permissoes').json()
+        self.assertFalse(permissions['admin_plataforma'])
+        self.assertFalse(permissions['gerenciar_empresas'])
+        self.assertEqual(self.client.post('/api/empresas', json={
+            'nome': 'Outra empresa', 'slug': 'outra-empresa', 'modo_hospedagem': 'cloud'
+        }).status_code, 403)
+        self.assertEqual(self.client.get('/api/empresas/pacote-instalacao').status_code, 403)
+
     def test_cannot_delete_other_company_notice(self):
         self.assertEqual(self.client.delete('/api/avisos/modelos/2').status_code, 404)
         self.assertEqual(len(self.db.rows['avisos_modelos']), 2)
@@ -106,6 +115,7 @@ class TenantTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 403)
 
     def test_installation_zip_has_sql_and_no_credentials(self):
+        self.user['app_metadata']['platform_admin'] = True
         response = self.client.get('/api/empresas/pacote-instalacao')
         self.assertEqual(response.status_code, 200)
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:

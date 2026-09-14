@@ -58,8 +58,8 @@ async def enforce_access(request, call_next):
                 raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
             if path == "/api/saude" and role not in ("gestor", "apoio"):
                 raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
-            if path.startswith("/api/empresas") and request.method != "GET" and role != "gestor":
-                raise HTTPException(403, "Acesso exclusivo do gestor.")
+            if path.startswith("/api/empresas") and request.method != "GET" and not eh_admin_plataforma(user):
+                raise HTTPException(403, "Acesso exclusivo da administração da plataforma.")
             if path.startswith("/api/backup") and role != "gestor":
                 raise HTTPException(403, "Acesso exclusivo do gestor.")
             if path == "/api/seguranca/auditoria" and request.method == "GET":
@@ -331,8 +331,18 @@ PERMISSIONS = {
     },
 }
 
-def permissoes_para(role: str):
-    return {"role": role, **PERMISSIONS.get(role, PERMISSIONS["tecnico"])}
+def eh_admin_plataforma(user: dict) -> bool:
+    """Diferencia a conta da plataforma dos gestores de cada cliente."""
+    metadata = (user or {}).get("app_metadata") or {}
+    return metadata.get("platform_admin") is True
+
+
+def permissoes_para(role: str, user: dict = None):
+    permissions = dict(PERMISSIONS.get(role, PERMISSIONS["tecnico"]))
+    permissions["gerenciar_empresas"] = role == "gestor" and eh_admin_plataforma(user or {})
+    # O backup continua pertencendo ao gestor da própria empresa.
+    permissions["baixar_backup"] = role == "gestor"
+    return {"role": role, "admin_plataforma": eh_admin_plataforma(user or {}), **permissions}
 
 def _metadata_usuario(user: dict):
     metadata = {}
@@ -884,7 +894,7 @@ async def listar_relatorios(
 @app.get("/api/permissoes")
 async def obter_permissoes(request: Request):
     user = getattr(request.state, "user", {}) or {}
-    return permissoes_para(role_of(user))
+    return permissoes_para(role_of(user), user)
 
 @app.post("/api/relatorios/{relatorio_id}/reprocessar")
 async def reprocessar_relatorio(relatorio_id: UUID, request: Request):
@@ -966,8 +976,8 @@ async def criar_empresa(request: Request):
 
 @app.get("/api/empresas/pacote-instalacao")
 async def pacote_instalacao(request: Request):
-    if role_of(request.state.user) != "gestor":
-        raise HTTPException(403, "Acesso exclusivo do gestor.")
+    if not eh_admin_plataforma(request.state.user):
+        raise HTTPException(403, "Acesso exclusivo da administração da plataforma.")
     from pathlib import Path
     root = Path(__file__).resolve().parent.parent
     buffer = io.BytesIO()

@@ -1,4 +1,4 @@
-# Instalação LinkCE: cloud e servidor próprio
+# Instalação do Sistema de Campo: cloud e servidor próprio
 
 O mesmo código atende painel e relatório técnico. O pacote cria a estrutura do banco,
 o bucket privado de evidências, as permissões e os registros de versão. Não contém
@@ -37,7 +37,15 @@ central entre instalações será parte do controle comercial futuro.
 
 O usuário só acessa empresas com vínculo ativo em `usuarios_empresas`. O papel é
 consultado por empresa. Informações editáveis pelo próprio usuário não autorizam
-acesso. Após criar uma empresa, selecione-a no painel antes de cadastrar seus usuários.
+acesso. A conta da plataforma é a única autorizada a criar empresas; os gestores de
+clientes administram apenas a própria empresa e não veem o seletor quando têm um único
+vínculo. Após criar uma empresa, selecione-a no painel e crie um usuário do tipo
+**Gestor** com o e-mail do cliente. Esse será o login administrativo do cliente.
+
+Em uma instalação cloud que já existia antes dessa separação, execute uma vez
+`database/admin_plataforma.sql` no SQL Editor. Ele habilita a conta interna
+`gestor@gestor.linkce` como administradora da plataforma, sem conceder esse poder aos
+gestores de clientes.
 
 ## Servidor próprio: instalar
 

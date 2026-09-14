@@ -314,7 +314,8 @@ async function loadEmpresas() {
     select.value = active.id;
     if (saved !== active.id) localStorage.setItem('linkce-empresa-id', active.id);
     applyBrand(active);
-    select.hidden = false;
+    // Uma conta de cliente com uma só empresa entra diretamente no seu ambiente.
+    select.hidden = empresas.length <= 1;
     if (select.dataset.ready !== '1') {
       select.dataset.ready = '1';
       select.addEventListener('change', () => {
@@ -371,9 +372,11 @@ async function enter(user) {
   const role = permissions.role;
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
-  currentUser = {...user, app_metadata:{...user.app_metadata, role}}; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
+  currentUser = {...user, app_metadata:{...user.app_metadata, role, platform_admin: Boolean(permissions.admin_plataforma)}}; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('managementButton').hidden = false;
-  document.querySelectorAll('[data-management-target]').forEach(b => b.hidden = role !== 'gestor');
+  document.querySelectorAll('[data-management-target]').forEach(b => {
+    b.hidden = role !== 'gestor' || (b.dataset.managementTarget === 'companies' && !permissions.gerenciar_empresas);
+  });
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
   initMap(); defaultDates(); applyFilters();
@@ -471,7 +474,7 @@ $('healthDetails')?.addEventListener('click', abrirSaudeDetalhada);
 $('auditFilters')?.addEventListener('submit', event => { event.preventDefault(); loadAudit(); });
 $('companyForm')?.addEventListener('submit', async event => {
   event.preventDefault();
-  if (currentUser?.app_metadata?.role !== 'gestor') return;
+  if (!currentUser?.app_metadata?.platform_admin) return;
   const button = $('saveCompany'); button.disabled = true; $('companyStatus').textContent = 'Criando empresa...';
   try {
     const data = await api('/api/empresas', {method:'POST', body:JSON.stringify({nome:$('companyName').value.trim(), slug:$('companySlug').value.trim(), modo_hospedagem:$('companyHosting').value, dominio:$('companyDomain').value.trim()})});
@@ -495,7 +498,9 @@ $('managementButton').addEventListener('click',()=>{
   showManagement(); $('managementDialog').showModal();
 });
 document.querySelectorAll('[data-management-target]').forEach(button=>button.addEventListener('click',async()=>{
-  const target=button.dataset.managementTarget; showManagement(target);
+  const target=button.dataset.managementTarget;
+  if (target === 'companies' && !currentUser?.app_metadata?.platform_admin) return;
+  showManagement(target);
   if(target === 'user') $('userStatus').textContent='';
   if(target === 'password') { $('passwordManagerForm').reset(); $('passwordStatus').textContent=''; await loadPasswordHistory(); }
   if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; }

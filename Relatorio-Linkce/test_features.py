@@ -5,11 +5,13 @@ import main
 
 class FeatureTests(unittest.TestCase):
     def test_permission_matrix_exposes_new_operations(self):
-        gestor = main.permissoes_para("gestor")
+        gestor = main.permissoes_para("gestor", {"app_metadata": {"platform_admin": True}})
+        gestor_cliente = main.permissoes_para("gestor", {"app_metadata": {}})
         apoio = main.permissoes_para("apoio")
         tecnico = main.permissoes_para("tecnico")
         self.assertTrue(gestor["baixar_backup"])
         self.assertTrue(gestor["gerenciar_empresas"])
+        self.assertFalse(gestor_cliente["gerenciar_empresas"])
         self.assertTrue(apoio["consultar_auditoria"])
         self.assertFalse(tecnico["baixar_backup"])
 

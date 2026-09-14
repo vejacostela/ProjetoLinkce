@@ -29,7 +29,9 @@ def bootstrap():
             raise SystemExit('Instalação já possui usuários ou está indisponível. Use a gestão do painel.')
         created = client.post('/auth/v1/admin/users', json={
             'email': email, 'password': password, 'email_confirm': True,
-            'user_metadata': {'nome': nome}, 'app_metadata': {'role': 'gestor', 'empresa_id': empresa},
+            'user_metadata': {'nome': nome},
+            # Apenas o primeiro gestor de uma instalação pode administrar empresas.
+            'app_metadata': {'role': 'gestor', 'empresa_id': empresa, 'platform_admin': True},
         })
         if created.status_code not in (200, 201):
             raise SystemExit(f'Cadastro recusado pelo Auth (HTTP {created.status_code}). Confira logs privados do serviço.')
