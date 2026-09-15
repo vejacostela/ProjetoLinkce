@@ -988,19 +988,20 @@ async def ajustar_acesso_empresa(empresa_id: UUID, request: Request):
     try:
         dados = await request.json()
         acao = dados.get("acao")
-        if acao not in ("bloquear", "liberar_7_dias"):
+        if acao not in ("bloquear", "liberar_7_dias", "desbloquear"):
             raise ValueError()
     except (ValueError, TypeError, AttributeError):
         raise HTTPException(422, "Ação de acesso inválida.")
-    ate = None if acao == "bloquear" else datetime.now(timezone.utc) + timedelta(days=7)
+    ate = None if acao in ("bloquear", "desbloquear") else datetime.now(timezone.utc) + timedelta(days=7)
     try:
         result = supabase_client.table("empresas").update({
-            "bloqueada": True,
+            "bloqueada": acao != "desbloquear",
             "liberada_ate": ate.isoformat() if ate else None,
-            "motivo_bloqueio": "Bloqueado pela administração" if acao == "bloquear" else "Liberado temporariamente por 7 dias",
+            "motivo_bloqueio": "Bloqueado pela administração" if acao == "bloquear" else ("Liberado temporariamente por 7 dias" if acao == "liberar_7_dias" else ""),
         }).eq("id", str(empresa_id)).execute()
         if not result.data: raise HTTPException(404, "Empresa não encontrada.")
-        return {"mensagem": "Empresa bloqueada." if acao == "bloquear" else "Empresa liberada por 7 dias.", "liberada_ate": ate.isoformat() if ate else None}
+        mensagem = {"bloquear": "Empresa bloqueada.", "liberar_7_dias": "Empresa liberada por 7 dias.", "desbloquear": "Empresa desbloqueada definitivamente."}[acao]
+        return {"mensagem": mensagem, "liberada_ate": ate.isoformat() if ate else None}
     except HTTPException: raise
     except Exception:
         raise HTTPException(503, "Não foi possível atualizar o acesso da empresa.")

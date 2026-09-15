@@ -308,6 +308,15 @@ async function loadEmpresas() {
             catch(error){ $('companyStatus').textContent=error.message; }
           });
           row.append(' ', action);
+          if (empresa.bloqueada) {
+            const unlock = document.createElement('button'); unlock.type='button'; unlock.textContent='Desbloquear';
+            unlock.addEventListener('click', async () => {
+              if (!confirm('Desbloquear definitivamente '+empresa.nome+'?')) return;
+              try { const out=await api('/api/empresas/'+encodeURIComponent(empresa.id)+'/acesso',{method:'POST',body:JSON.stringify({acao:'desbloquear'})}); $('companyStatus').textContent=out.mensagem; await loadEmpresas(); }
+              catch(error){ $('companyStatus').textContent=error.message; }
+            });
+            row.append(' ', unlock);
+          }
         }
         list.append(row);
       }
