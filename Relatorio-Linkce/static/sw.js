@@ -1,4 +1,4 @@
-const CACHE = 'gestao-campo-v6';
+const CACHE = 'gestao-campo-v7';
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
 const SHELL = ['/tecnico', '/panel-assets/design-system.css?v=1', '/static/notices-tech.js?v=2', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
@@ -8,7 +8,6 @@ self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE)
       .then(c => c.addAll(SHELL))
-      .then(() => self.skipWaiting())
   );
 });
 
@@ -339,6 +338,10 @@ async function sincronizarFila() {
 
 // ── Mensagens do cliente ──────────────────────────────────────────────────────
 self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
   if (e.data?.type === 'AUTH_SESSION') {
     authSession = { token: e.data.token, userId: e.data.userId, empresaId: e.data.empresaId || null };
   }
@@ -356,7 +359,9 @@ self.addEventListener('message', e => {
     buscarFila().then(fila => {
       const failed = fila.filter(item => item._status === 'erro').length;
       const pending = fila.length - failed;
-      e.source?.postMessage({ type: 'CONTAGEM_FILA', total: fila.length, failed, pending });
+      const resposta = { type: 'CONTAGEM_FILA', total: fila.length, failed, pending };
+      e.ports?.[0]?.postMessage(resposta);
+      e.source?.postMessage(resposta);
     });
   }
 });
