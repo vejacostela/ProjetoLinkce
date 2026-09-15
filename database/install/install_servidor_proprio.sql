@@ -419,5 +419,22 @@ $linkce_migration$;
     INSERT INTO public.linkce_schema_migrations(versao, checksum) VALUES ('007_instalacao_isolamento.sql', 'deb2ac7a968523385aa298dd645b8eaa7daa927f2f982ea88043f918b930f5cf');
   END IF;
 END $linkce_step$;
+
+-- 008_bloqueio_empresas.sql
+DO $linkce_step$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.linkce_schema_migrations
+             WHERE versao = '008_bloqueio_empresas.sql' AND checksum <> 'ddd42f56813eae559ca2d425f00099326de870a515ca9490fb4de6c56050ec18') THEN
+    RAISE EXCEPTION 'Migração já aplicada foi alterada: 008_bloqueio_empresas.sql';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.linkce_schema_migrations WHERE versao = '008_bloqueio_empresas.sql') THEN
+    EXECUTE $linkce_migration$ALTER TABLE public.empresas
+  ADD COLUMN IF NOT EXISTS bloqueada boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS liberada_ate timestamptz,
+  ADD COLUMN IF NOT EXISTS motivo_bloqueio text NOT NULL DEFAULT '';
+$linkce_migration$;
+    INSERT INTO public.linkce_schema_migrations(versao, checksum) VALUES ('008_bloqueio_empresas.sql', 'ddd42f56813eae559ca2d425f00099326de870a515ca9490fb4de6c56050ec18');
+  END IF;
+END $linkce_step$;
 COMMIT;
 SELECT versao, aplicado_em FROM public.linkce_schema_migrations ORDER BY versao;

@@ -298,7 +298,17 @@ async function loadEmpresas() {
       list.replaceChildren();
       for (const empresa of empresas) {
         const row = document.createElement('p');
-        row.textContent = `${empresa.nome} · ${empresa.modo_hospedagem === 'servidor_proprio' ? 'Servidor próprio' : 'Cloud'}${empresa.dominio ? ' · ' + empresa.dominio : ''}`;
+        row.textContent = `${empresa.nome} · ${empresa.modo_hospedagem === 'servidor_proprio' ? 'Servidor próprio' : 'Cloud'}${empresa.bloqueada ? ' · Bloqueada' : ''}`;
+        if (currentUser?.app_metadata?.platform_admin) {
+          const action = document.createElement('button'); action.type='button';
+          action.textContent = empresa.bloqueada ? 'Liberar 7 dias' : 'Bloquear empresa';
+          action.addEventListener('click', async () => {
+            if (!confirm(`${action.textContent}: ${empresa.nome}?`)) return;
+            try { const out=await api('/api/empresas/'+encodeURIComponent(empresa.id)+'/acesso',{method:'POST',body:JSON.stringify({acao:empresa.bloqueada?'liberar_7_dias':'bloquear'})}); $('companyStatus').textContent=out.mensagem; await loadEmpresas(); }
+            catch(error){ $('companyStatus').textContent=error.message; }
+          });
+          row.append(' ', action);
+        }
         list.append(row);
       }
     }

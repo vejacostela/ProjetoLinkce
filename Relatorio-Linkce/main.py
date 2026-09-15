@@ -368,10 +368,17 @@ def empresa_id_do_usuario(user: dict, requested: str = None):
         membership = (supabase_client.table("usuarios_empresas").select("papel")
                       .eq("usuario_id", user["id"]).eq("empresa_id", empresa)
                       .eq("ativo", True).limit(1).execute().data or [])
-        active = (supabase_client.table("empresas").select("id").eq("id", empresa)
+        active = (supabase_client.table("empresas").select("id,ativo,bloqueada,liberada_ate").eq("id", empresa)
                   .eq("ativo", True).limit(1).execute().data or [])
         if not membership or not active:
             raise HTTPException(403, "Seu usuário não tem acesso ativo a esta empresa.")
+        liberada_ate = active[0].get("liberada_ate")
+        if active[0].get("bloqueada") and not eh_admin_plataforma(user):
+            try:
+                if not liberada_ate or datetime.fromisoformat(str(liberada_ate).replace("Z", "+00:00")) <= datetime.now(timezone.utc):
+                    raise HTTPException(423, "A empresa está temporariamente bloqueada. Consulte a administração.")
+            except ValueError:
+                raise HTTPException(423, "A empresa está temporariamente bloqueada. Consulte a administração.")
         papel = membership[0].get("papel")
         if papel not in PERMISSIONS:
             raise HTTPException(403, "Perfil não autorizado.")
@@ -973,6 +980,30 @@ async def criar_empresa(request: Request):
         if getattr(exc, "code", "") == "23505":
             raise HTTPException(409, "Já existe uma empresa com esse identificador.")
         raise HTTPException(503, "Cadastro não confirmado. Verifique se o instalador do banco está atualizado.")
+
+@app.post("/api/empresas/{empresa_id}/acesso")
+async def ajustar_acesso_empresa(empresa_id: UUID, request: Request):
+    if not eh_admin_plataforma(request.state.user):
+        raise HTTPException(403, "Acesso exclusivo da administração da plataforma.")
+    try:
+        dados = await request.json()
+        acao = dados.get("acao")
+        if acao not in ("bloquear", "liberar_7_dias"):
+            raise ValueError()
+    except (ValueError, TypeError, AttributeError):
+        raise HTTPException(422, "Ação de acesso inválida.")
+    ate = None if acao == "bloquear" else datetime.now(timezone.utc) + timedelta(days=7)
+    try:
+        result = supabase_client.table("empresas").update({
+            "bloqueada": True,
+            "liberada_ate": ate.isoformat() if ate else None,
+            "motivo_bloqueio": "Bloqueado pela administração" if acao == "bloquear" else "Liberado temporariamente por 7 dias",
+        }).eq("id", str(empresa_id)).execute()
+        if not result.data: raise HTTPException(404, "Empresa não encontrada.")
+        return {"mensagem": "Empresa bloqueada." if acao == "bloquear" else "Empresa liberada por 7 dias.", "liberada_ate": ate.isoformat() if ate else None}
+    except HTTPException: raise
+    except Exception:
+        raise HTTPException(503, "Não foi possível atualizar o acesso da empresa.")
 
 @app.get("/api/empresas/pacote-instalacao")
 async def pacote_instalacao(request: Request):
