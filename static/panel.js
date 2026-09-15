@@ -503,7 +503,7 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   showManagement(target);
   if(target === 'user') $('userStatus').textContent='';
   if(target === 'password') { $('passwordManagerForm').reset(); $('passwordStatus').textContent=''; await loadPasswordHistory(); }
-  if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; }
+  if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; await loadBankStats(); }
   if(target === 'companies') { $('companyStatus').textContent=''; await loadEmpresas(); }
 }));
 document.querySelectorAll('[data-management-back]').forEach(button=>button.addEventListener('click',()=>showManagement()));
@@ -595,11 +595,31 @@ $('userForm').addEventListener('submit',async e=>{
 })();
 
 let bankPreview = null, bankVersion = 0, deletingBank = false;
+async function loadBankStats() {
+  const metrics = $('bankMetrics'), chart = $('bankChart');
+  if (!metrics || !chart) return;
+  metrics.textContent = 'Carregando ocupação…'; chart.replaceChildren();
+  try {
+    const data = await api('/api/banco/stats');
+    const kb = Math.max(0, Number(data.size_bytes) || 0);
+    const size = kb >= 1048576 ? (kb / 1048576).toFixed(2) + ' GB' : kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' B';
+    metrics.textContent = `${Number(data.total_rows)||0} relatórios · ${size} estimados · de ${data.oldest_date || '—'} até ${data.newest_date || '—'}`;
+    const days = (data.por_dia || []).slice(-14), max = Math.max(1, ...days.map(x => Number(x.total)||0));
+    for (const row of days) { const bar=document.createElement('span'); bar.title=`${row.dia}: ${row.total}`; bar.style.height=`${Math.max(8, (Number(row.total)||0)/max*100)}%`; chart.append(bar); }
+  } catch (error) { metrics.textContent = error.message; }
+}
 function clearBankPreview() {
   bankVersion++; bankPreview = null;
   $('bankConfirm').value = ''; $('bankDeleteForm').hidden = true;
 }
 $('keepDays').addEventListener('input',()=>{clearBankPreview();$('bankStatus').textContent='Calcule novamente após alterar o período.';});
+$('cleanupMode')?.addEventListener('change', () => {
+  localStorage.setItem('campo-limpeza-modo', $('cleanupMode').value);
+  $('bankStatus').textContent = $('cleanupMode').value === 'automatico'
+    ? 'Regra automática selecionada. Confirme a prévia para executar a limpeza.'
+    : 'Modo manual selecionado.';
+});
+if ($('cleanupMode')) $('cleanupMode').value = localStorage.getItem('campo-limpeza-modo') || 'manual';
 $('bankPreviewForm').addEventListener('submit',async event=>{
   event.preventDefault(); if(deletingBank) return;
   clearBankPreview(); const version=bankVersion, userId=currentUser?.id;
