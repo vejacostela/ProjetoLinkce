@@ -90,6 +90,7 @@ async function api(path, options = {}) {
     await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
   }
   if (lastError && !response) throw lastError;
+  if (response.status === 428) { location.replace('/primeiro-acesso'); throw new Error('Conclua seu primeiro acesso.'); }
   if (response.status === 401) signedOut('Sua sessão expirou. Entre novamente.');
   if (response.status === 403) signedOut('Seu perfil não permite esta operação.');
   if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : 'Não foi possível concluir a operação. Tente novamente.');
@@ -300,6 +301,17 @@ async function loadEmpresas() {
         const row = document.createElement('p');
         row.textContent = `${empresa.nome} · ${empresa.modo_hospedagem === 'servidor_proprio' ? 'Servidor próprio' : 'Cloud'}${empresa.bloqueada ? ' · Bloqueada' : ''}`;
         if (currentUser?.app_metadata?.platform_admin) {
+          const invite = document.createElement('button'); invite.type='button'; invite.textContent='Enviar / reenviar convite';
+          invite.addEventListener('click', async () => {
+            const nome=prompt('Nome do administrador de '+empresa.nome); if(!nome) return;
+            const email=prompt('Email do administrador de '+empresa.nome); if(!email) return;
+            if(!confirm('Enviar convite de administrador para '+email+' na empresa '+empresa.nome+'?')) return;
+            invite.disabled=true;
+            try { const out=await api('/api/empresas/'+encodeURIComponent(empresa.id)+'/convite',{method:'POST',body:JSON.stringify({nome,email})}); $('companyStatus').textContent=out.mensagem; }
+            catch(error){$('companyStatus').textContent=error.message;}
+            finally{invite.disabled=false;}
+          });
+          row.append(' ',invite);
           const action = document.createElement('button'); action.type='button';
           action.textContent = empresa.bloqueada ? 'Liberar 7 dias' : 'Bloquear empresa';
           action.addEventListener('click', async () => {
@@ -496,8 +508,8 @@ $('companyForm')?.addEventListener('submit', async event => {
   if (!currentUser?.app_metadata?.platform_admin) return;
   const button = $('saveCompany'); button.disabled = true; $('companyStatus').textContent = 'Criando empresa...';
   try {
-    const data = await api('/api/empresas', {method:'POST', body:JSON.stringify({nome:$('companyName').value.trim(), slug:$('companySlug').value.trim(), modo_hospedagem:$('companyHosting').value, dominio:$('companyDomain').value.trim()})});
-    $('companyStatus').textContent = 'Empresa criada: ' + (data.empresa?.nome || 'ok');
+    const data = await api('/api/empresas', {method:'POST', body:JSON.stringify({nome:$('companyName').value.trim(), slug:$('companySlug').value.trim(), modo_hospedagem:$('companyHosting').value, dominio:$('companyDomain').value.trim(), admin_nome:$('companyAdminName').value.trim(), admin_email:$('companyAdminEmail').value.trim()})});
+    $('companyStatus').textContent = data.convite_enviado ? 'Empresa criada. Convite encaminhado ao serviço de email; o cliente definirá a senha no primeiro acesso.' : data.aviso;
     event.target.reset(); await loadEmpresas();
   } catch(error) { $('companyStatus').textContent = error.message; }
   finally { button.disabled = false; }

@@ -44,6 +44,9 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         try:
             user = await authenticate(request)
+            metadata = user.get('app_metadata') or {}
+            if metadata.get('onboarding_required') is True and not path.startswith('/api/primeiro-acesso'):
+                raise HTTPException(428, 'Conclua seu primeiro acesso: senha e aviso de privacidade.')
             requested_empresa = None if path == '/api/empresas' and request.method == 'GET' else request.headers.get("X-Empresa-ID")
             request.state.empresa_id = empresa_id_do_usuario(user, requested_empresa)
             role = role_of(user)
@@ -82,7 +85,7 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if response.status_code < 400 and path != '/api/seguranca/redefinir-senha' and (
-        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup')) or
+        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso')) or
         (path.startswith('/api/relatorios/') and path.endswith('/imagens') and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
         registrar_auditoria(request, f'{request.method} {path}', 'sucesso')
@@ -957,6 +960,11 @@ async def criar_empresa(request: Request):
     try:
         data = await request.json()
         nome = data.get("nome", "").strip()
+        admin_email = data.get('admin_email', '').strip().lower()
+        admin_nome = data.get('admin_nome', '').strip()
+        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', admin_email) or len(admin_email) > 254 or not 1 <= len(admin_nome) <= 120:
+            raise ValueError()
+        onboarding_config()
         slug = re.sub(r"[^a-z0-9]+", "-", data.get("slug", "").strip().lower() or nome.lower()).strip("-")
         modo = data.get("modo_hospedagem", "cloud")
         dominio = data.get("dominio", "").strip().lower()
@@ -975,11 +983,133 @@ async def criar_empresa(request: Request):
         }).execute()
         if not result.data:
             raise ValueError("Empresa não retornada")
-        return JSONResponse(content={"empresa": result.data[0]}, status_code=201)
+        empresa = result.data[0]
     except Exception as exc:
         if getattr(exc, "code", "") == "23505":
             raise HTTPException(409, "Já existe uma empresa com esse identificador.")
         raise HTTPException(503, "Cadastro não confirmado. Verifique se o instalador do banco está atualizado.")
+    # O cadastro é independente da entrega de e-mail. Uma falha não deve incentivar
+    # o operador a criar a mesma empresa novamente.
+    try:
+        convidar_gestor(empresa['id'], admin_email, admin_nome)
+        return JSONResponse({'empresa': empresa, 'convite_enviado': True}, status_code=201)
+    except Exception:
+        return JSONResponse({'empresa': empresa, 'convite_enviado': False,
+            'aviso': 'Empresa criada, mas o convite não foi concluído. Confira SMTP e Authentication antes de tentar reenviar.'}, status_code=201)
+
+def onboarding_config():
+    from urllib.parse import urlsplit
+    origin = os.getenv('APP_PUBLIC_URL', '').rstrip('/')
+    notice = os.getenv('PRIVACY_NOTICE_URL', '')
+    version = os.getenv('PRIVACY_NOTICE_VERSION', '')
+    origin_parts = urlsplit(origin)
+    if origin_parts.path not in ('', '/') or origin_parts.query:
+        raise HTTPException(503, 'APP_PUBLIC_URL deve conter somente a origem HTTPS do sistema.')
+    for url in (origin, notice):
+        parsed = urlsplit(url)
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise HTTPException(503, 'Configure APP_PUBLIC_URL, PRIVACY_NOTICE_URL e PRIVACY_NOTICE_VERSION antes de enviar convites.')
+    if not version or len(version) > 120:
+        raise HTTPException(503, 'Configure a versão do aviso de privacidade.')
+    return origin, notice, version
+
+def convidar_gestor(empresa_id, email, nome):
+    origin, _, _ = onboarding_config()
+    admin = _admin_client()
+    # Não vincular nem promover contas já existentes de outra empresa.
+    page = 1
+    while True:
+        users = admin.auth.admin.list_users(page=page, per_page=100)
+        users = getattr(users, 'users', users) or []
+        existing = next((u for u in users if u.email and u.email.lower() == email), None)
+        if existing:
+            meta = existing.app_metadata or {}
+            if meta.get('empresa_id') != str(empresa_id) or meta.get('onboarding_required') is not True:
+                raise HTTPException(409, 'Email já cadastrado. Não foi alterado nenhum vínculo existente.')
+            supabase_client.table('usuarios_empresas').upsert({
+                'usuario_id': existing.id, 'empresa_id': str(empresa_id), 'papel': 'gestor', 'ativo': True}).execute()
+            admin.auth.reset_password_for_email(email, {'redirect_to': origin + '/primeiro-acesso'})
+            return
+        if len(users) < 100: break
+        page += 1
+    invited = admin.auth.admin.invite_user_by_email(email, {
+        'redirect_to': origin + '/primeiro-acesso', 'data': {'nome': nome}})
+    if not invited.user:
+        raise HTTPException(503, 'Convite não confirmado pelo serviço de email.')
+    uid = invited.user.id
+    # Ativar o vínculo somente depois de marcar a obrigação no Auth.
+    admin.auth.admin.update_user_by_id(uid, {'app_metadata': {
+        'role': 'gestor', 'empresa_id': str(empresa_id),
+        'onboarding_required': True, 'onboarding_password_at': None}})
+    supabase_client.table('usuarios_empresas').insert({
+        'usuario_id': uid, 'empresa_id': str(empresa_id), 'papel': 'gestor', 'ativo': True}).execute()
+
+@app.post('/api/empresas/{empresa_id}/convite')
+async def enviar_convite_empresa(empresa_id: UUID, request: Request):
+    if not eh_admin_plataforma(request.state.user):
+        raise HTTPException(403, 'Acesso exclusivo da administração da plataforma.')
+    vinculo = supabase_client.table('usuarios_empresas').select('empresa_id').eq(
+        'usuario_id', request.state.user['id']).eq('empresa_id', str(empresa_id)).eq('ativo', True).execute().data
+    if not vinculo:
+        raise HTTPException(403, 'Empresa não autorizada.')
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(422, 'Dados inválidos.')
+    email, nome = data.get('email'), data.get('nome')
+    if not isinstance(email, str) or not isinstance(nome, str) or not 1 <= len(nome.strip()) <= 120 or len(email) > 254 or not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email.strip()):
+        raise HTTPException(422, 'Confira nome e email do administrador.')
+    try:
+        convidar_gestor(str(empresa_id), email.strip().lower(), nome.strip())
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, 'Convite não confirmado. Confira SMTP e a conta no Supabase antes de tentar novamente.')
+    return {'mensagem': 'Link de primeiro acesso encaminhado ao serviço de email.'}
+
+@app.get('/primeiro-acesso', include_in_schema=False)
+async def primeiro_acesso_page():
+    return FileResponse(os.path.join(os.path.dirname(__file__), 'onboarding.html'),
+        headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
+
+@app.get('/api/primeiro-acesso')
+async def primeiro_acesso_status(request: Request):
+    _, notice, version = onboarding_config()
+    meta = request.state.user.get('app_metadata') or {}
+    return {'pendente': meta.get('onboarding_required') is True,
+        'senha_definida': bool(meta.get('onboarding_password_at')),
+        'aviso_url': notice, 'versao': version}
+
+@app.post('/api/primeiro-acesso/senha')
+async def primeiro_acesso_senha(request: Request):
+    meta = request.state.user.get('app_metadata') or {}
+    if meta.get('onboarding_required') is not True or meta.get('onboarding_password_at'):
+        raise HTTPException(409, 'Esta etapa já foi concluída.')
+    data = await request.json()
+    senha = data.get('senha') if isinstance(data, dict) else None
+    if not isinstance(senha, str) or not 12 <= len(senha) <= 128:
+        raise HTTPException(422, 'Escolha uma senha de 12 a 128 caracteres.')
+    try:
+        _admin_client().auth.admin.update_user_by_id(request.state.user['id'], {
+            'password': senha, 'app_metadata': {**meta,
+                'onboarding_password_at': datetime.now(timezone.utc).isoformat()}})
+    except Exception:
+        raise HTTPException(503, 'Senha não confirmada. Verifique os requisitos de senha e tente novamente.')
+    return {'salvo': True}
+
+@app.post('/api/primeiro-acesso/privacidade')
+async def primeiro_acesso_privacidade(request: Request):
+    _, notice, version = onboarding_config()
+    meta = request.state.user.get('app_metadata') or {}
+    data = await request.json()
+    if not isinstance(data, dict) or data.get('ciencia') is not True or data.get('versao') != version:
+        raise HTTPException(422, 'Leia o aviso atual e confirme ciência para continuar.')
+    if not meta.get('onboarding_password_at'):
+        raise HTTPException(409, 'Defina sua senha primeiro.')
+    if meta.get('onboarding_required') is True:
+        _admin_client().auth.admin.update_user_by_id(request.state.user['id'], {'app_metadata': {
+            **meta, 'onboarding_required': False, 'privacy_notice_version': version,
+            'privacy_notice_url': notice, 'privacy_acknowledged_at': datetime.now(timezone.utc).isoformat()}})
+    return {'concluido': True}
 
 @app.post("/api/empresas/{empresa_id}/acesso")
 async def ajustar_acesso_empresa(empresa_id: UUID, request: Request):

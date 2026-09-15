@@ -1185,7 +1185,9 @@ async function apiFetch(url, options = {}) {
   if (session?.access_token) headers.set('Authorization', 'Bearer ' + session.access_token);
   const empresa = localStorage.getItem('linkce-empresa-id');
   if (empresa) headers.set('X-Empresa-ID', empresa);
-  return fetch(url, { ...options, headers });
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 428) location.replace('/primeiro-acesso');
+  return response;
 }
 
 let currentUser = null;
@@ -1285,6 +1287,10 @@ async function aplicarMarcaEmpresa(user) {
 }
 
 function mostrarApp(user) {
+  if (user?.app_metadata?.onboarding_required === true) {
+    location.replace('/primeiro-acesso');
+    return;
+  }
   iniciarExpiracaoSessao();
   notices.check();
   document.getElementById('loginScreen').style.display = 'none';

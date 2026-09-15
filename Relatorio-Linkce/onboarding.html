@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>Primeiro acesso · Sistema de Campo</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef3f8;color:#182b42;font:16px system-ui;min-height:100dvh;display:grid;place-items:center;padding:20px}
+main{width:100%;max-width:520px;background:white;border:1px solid #dae2ed;border-top:4px solid #f5a329;border-radius:18px;padding:32px;box-shadow:0 12px 40px #16334b12}
+h1{font-size:26px}p{line-height:1.6}label{display:block;margin:16px 0 6px}input:not([type=checkbox]),button{width:100%;padding:13px;font:inherit;border-radius:9px;border:1px solid #9bacbf}
+button{margin-top:20px;background:#f5a329;color:#142134;cursor:pointer;font-weight:650}button:disabled{opacity:.5}a{color:#175c91}
+[hidden]{display:none!important}.step{font-size:13px;color:#596c83}#status{min-height:28px}input[type=checkbox]{width:18px;height:18px;vertical-align:middle;margin-right:8px}
+</style></head><body><main>
+<p class="step">BEM-VINDO · PRIMEIRO ACESSO</p><h1 id="title">Preparando seu acesso</h1>
+<p id="identity"></p><p id="status" role="status" aria-live="polite">Validando o convite…</p>
+<form id="passwordForm" hidden><p>Etapa 1 de 2 — escolha sua senha pessoal.</p>
+<label for="password">Nova senha</label><input id="password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+<label for="repeat">Confirmar senha</label><input id="repeat" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+<p class="step">Use de 12 a 128 caracteres. Não compartilhe sua senha.</p><button>Salvar senha e continuar</button></form>
+<form id="privacyForm" hidden><p>Etapa 2 de 2 — privacidade e proteção de dados.</p>
+<p>O sistema trata dados de identificação e informações dos atendimentos, que podem incluir fotos e localização. Consulte as finalidades, os responsáveis, a retenção e os canais para exercer seus direitos no aviso abaixo.</p>
+<a id="notice" target="_blank" rel="noopener noreferrer">Ler aviso de privacidade completo ↗</a><p id="version" class="step"></p>
+<label><input id="ack" type="checkbox" required>Li e estou ciente do aviso de privacidade.</label>
+<p class="step">Este registro confirma a leitura do aviso. Não é uma autorização genérica para qualquer uso dos seus dados.</p>
+<button>Concluir e acessar o painel</button></form>
+<p><a href="/" id="leave">Voltar ao login</a> · <a href="/recuperar-senha">Link expirado? Recuperar acesso</a></p>
+</main><script src="/static/onboarding-auth.js"></script><script src="/static/onboarding.js"></script></body></html>
