@@ -5,6 +5,8 @@ import csv
 import io
 import zipfile
 import logging
+import hashlib
+import secrets
 from datetime import date, time, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, UploadFile, File
@@ -40,7 +42,8 @@ async def enforce_access(request, call_next):
     path = request.url.path
     if path.startswith("/api/debug/") or path == "/api/materiais/recarregar":
         return JSONResponse({"detail": "Recurso indisponível."}, status_code=404)
-    protected = path.startswith("/api/") and path not in ("/api/config", "/api/materiais")
+    public_reset = path.startswith("/api/seguranca/redefinicao/")
+    protected = path.startswith("/api/") and path not in ("/api/config", "/api/materiais") and not public_reset
     if protected or path == "/gerar_relatorio":
         try:
             user = await authenticate(request)
@@ -1288,6 +1291,104 @@ def _find_user_by_email(admin, email: str):
         logger.exception("Falha ao consultar usuários para redefinição de senha")
         raise HTTPException(status_code=503, detail="Não foi possível consultar os usuários cadastrados.")
     raise HTTPException(status_code=404, detail="Nenhuma conta cadastrada com este email.")
+
+def _reset_origin(request: Request) -> str:
+    return os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/") or str(request.base_url).rstrip("/")
+
+def _reset_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+@app.post("/api/seguranca/gerar-link-redefinicao")
+async def gerar_link_redefinicao(request: Request):
+    try:
+        data = await request.json()
+        email = data.get("email", "").strip().lower() if isinstance(data, dict) and isinstance(data.get("email"), str) else ""
+        motivo = data.get("motivo", "").strip() if isinstance(data, dict) and isinstance(data.get("motivo", ""), str) else ""
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+            raise HTTPException(422, "Informe um email válido.")
+        if len(motivo) > 300:
+            raise HTTPException(422, "O motivo pode ter até 300 caracteres.")
+        if not supabase_client:
+            raise HTTPException(503, "Banco de dados não configurado.")
+        supabase_client.table("links_redefinicao_senha").select("id", head=True).limit(1).execute()
+        target = _find_user_by_email(_admin_client(), email)
+        exigir_usuario_da_empresa(target.id, request)
+        actor = request.state.user
+        token = secrets.token_urlsafe(32)
+        now = datetime.now(timezone.utc)
+        expires = now + timedelta(minutes=30)
+        query = (supabase_client.table("links_redefinicao_senha").update({"usado_em": now.isoformat()})
+                 .eq("usuario_id", target.id).is_("usado_em", "null").gt("expira_em", now.isoformat()))
+        if EMPRESA_TABLE_AVAILABLE:
+            query = query.eq("empresa_id", request.state.empresa_id)
+        query.execute()
+        payload = {"token_hash": _reset_hash(token), "usuario_id": target.id, "usuario_email": email,
+                   "solicitado_por": actor["id"], "solicitado_por_email": (actor.get("email") or "").lower(),
+                   "motivo": motivo or None, "expira_em": expires.isoformat()}
+        if EMPRESA_TABLE_AVAILABLE:
+            payload["empresa_id"] = request.state.empresa_id
+        supabase_client.table("links_redefinicao_senha").insert(payload).execute()
+        return {"link": f"{_reset_origin(request)}/nova-senha?token={token}", "expira_em": expires.isoformat(),
+                "mensagem": "Link criado. Entregue-o ao usuário por um canal confirmado."}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao gerar link temporário de redefinição")
+        raise HTTPException(503, "Não foi possível gerar o link. Aplique a migração 009 e tente novamente.")
+
+@app.get("/api/seguranca/redefinicao/status")
+async def status_link_redefinicao(token: str = Query("", min_length=1, max_length=200)):
+    if not supabase_client or not token:
+        raise HTTPException(400, "Link de redefinição inválido.")
+    try:
+        result = (supabase_client.table("links_redefinicao_senha").select("id,usuario_email,expira_em,usado_em")
+                  .eq("token_hash", _reset_hash(token)).limit(1).execute())
+        row = (result.data or [None])[0]
+        if not row or row.get("usado_em"):
+            raise HTTPException(410, "Este link já foi utilizado ou não existe.")
+        expires = datetime.fromisoformat(str(row["expira_em"]).replace("Z", "+00:00"))
+        if expires <= datetime.now(timezone.utc):
+            raise HTTPException(410, "Este link expirou. Solicite outro à gestão.")
+        return {"valido": True, "usuario_email": row.get("usuario_email"), "expira_em": row.get("expira_em")}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, "Não foi possível validar o link.")
+
+@app.post("/api/seguranca/redefinicao/concluir")
+async def concluir_redefinicao(request: Request):
+    try:
+        data = await request.json()
+        token = data.get("token", "") if isinstance(data, dict) else ""
+        senha = data.get("senha", "") if isinstance(data, dict) else ""
+        if not isinstance(token, str) or not token or not isinstance(senha, str) or not 12 <= len(senha) <= 128:
+            raise HTTPException(422, "Informe o link e uma senha de 12 a 128 caracteres.")
+        if not supabase_client:
+            raise HTTPException(503, "Banco de dados não configurado.")
+        now = datetime.now(timezone.utc)
+        claim = (supabase_client.table("links_redefinicao_senha").update({"usado_em": now.isoformat()})
+                 .eq("token_hash", _reset_hash(token)).is_("usado_em", "null").gt("expira_em", now.isoformat())
+                 .select("id,usuario_id,usuario_email,solicitado_por,solicitado_por_email,motivo,empresa_id").execute())
+        row = (claim.data or [None])[0]
+        if not row:
+            raise HTTPException(410, "Este link já foi utilizado, expirou ou é inválido.")
+        try:
+            _admin_client().auth.admin.update_user_by_id(row["usuario_id"], {"password": senha})
+        except Exception:
+            supabase_client.table("links_redefinicao_senha").update({"usado_em": None}).eq("id", row["id"]).execute()
+            raise HTTPException(503, "A nova senha não foi salva. Tente novamente.")
+        history = {"gestor_id": row["solicitado_por"], "gestor_email": row["solicitado_por_email"],
+                   "usuario_id": row["usuario_id"], "usuario_email": row["usuario_email"],
+                   "motivo": row.get("motivo") or "Redefinição por link temporário"}
+        if EMPRESA_TABLE_AVAILABLE and row.get("empresa_id"):
+            history["empresa_id"] = row["empresa_id"]
+        supabase_client.table("historico_redefinicao_senhas").insert(history).execute()
+        return {"mensagem": "Senha alterada com sucesso. O link foi encerrado."}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao concluir redefinição por link")
+        raise HTTPException(503, "Não foi possível salvar a nova senha.")
 
 
 @app.get("/api/seguranca/auditoria")

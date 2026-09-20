@@ -2,11 +2,14 @@
   const el = id => document.getElementById(id);
   const status = text => { el('status').textContent = text; };
   const recovering = location.pathname === '/nova-senha';
+  const resetToken = new URLSearchParams(location.search).get('token') || '';
+  const tokenMode = recovering && Boolean(resetToken);
   let client, recoveryReady = false, recoveryChecking = false;
   if (recovering) {
     el('title').textContent = 'Definir nova senha';
     el('intro').textContent = 'Validando seu link de recuperação...';
     el('again').hidden = false;
+    if (tokenMode) { el('title').textContent = 'Definir nova senha'; el('intro').textContent = 'Use este link temporário para escolher sua nova senha.'; }
   }
   try {
     const response = await fetch('/api/config', { cache: 'no-store' });
@@ -36,13 +39,25 @@
         }, 0);
       }
     });
-    await client.auth.getSession();
-    if (!recovering) {
-      el('requestForm').hidden = false;
-      status('');
-    } else if (!recoveryChecking) {
+    if (tokenMode) {
+      const check = await fetch('/api/seguranca/redefinicao/status?token=' + encodeURIComponent(resetToken), {cache:'no-store'});
+      const body = await check.json().catch(() => ({}));
+      if (!check.ok) throw new Error(body.detail || 'Link inválido ou expirado.');
+      recoveryReady = true;
+      el('requestForm').hidden = true;
+      el('passwordForm').hidden = false;
+      el('saveButton').disabled = false;
+      status('Link válido para ' + (body.usuario_email || 'esta conta') + '.');
+      history.replaceState(null, '', '/nova-senha?token=' + encodeURIComponent(resetToken));
+    } else {
+      await client.auth.getSession();
+      if (!recovering) {
+        el('requestForm').hidden = false;
+        status('');
+      } else if (!recoveryChecking) {
       history.replaceState(null, '', '/nova-senha');
       status('Abra o link recebido por email. Se ele expirou ou já foi usado, solicite outro.');
+      }
     }
   } catch (_) {
     status('Não foi possível iniciar a autenticação. Tente recarregar ou contate o responsável pelo sistema.');
@@ -84,6 +99,16 @@
     const button = el('saveButton');
     button.disabled = true;
     try {
+      if (tokenMode) {
+        const response = await fetch('/api/seguranca/redefinicao/concluir', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:resetToken, senha:password}), cache:'no-store'});
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) { status(body.detail || 'Não foi possível salvar a nova senha.'); return; }
+        recoveryReady = false;
+        el('passwordForm').reset();
+        el('passwordForm').hidden = true;
+        status(body.mensagem || 'Senha alterada com sucesso.');
+        return;
+      }
       const { error } = await client.auth.updateUser({ password });
       if (error) {
         status(CampoAuth.message(error));

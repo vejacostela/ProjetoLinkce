@@ -49,3 +49,7 @@
   .filter-actions button { width:100%; }
   .inline-filters label { min-width:100%; }
 }
+
+.reset-link-box{margin:22px 0;padding:16px;border:1px solid var(--border,#38405b);border-radius:12px;background:rgba(9,14,33,.35)}
+.reset-link-box h3{margin:0 0 6px}.copy-result{display:flex;gap:8px;margin-top:10px}.copy-result input{min-width:0;flex:1}
+@media(max-width:620px){.copy-result{flex-direction:column}.reset-link-box .inline-filters{display:grid;grid-template-columns:1fr}}

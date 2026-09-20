@@ -563,6 +563,16 @@ $('passwordManagerForm').addEventListener('submit',async event=>{
   } catch(error) {if(userId===currentUser?.id)$('passwordStatus').textContent=error.message;}
   finally {button.disabled=false;}
 });
+$('resetLinkForm')?.addEventListener('submit',async event=>{
+  event.preventDefault();
+  const button=$('generateResetLink'); button.disabled=true; $('resetLinkResult').hidden=true; $('passwordStatus').textContent='Gerando link temporário...';
+  try {
+    const result=await api('/api/seguranca/gerar-link-redefinicao',{method:'POST',body:JSON.stringify({email:$('resetLinkEmail').value.trim(),motivo:$('resetLinkReason').value.trim()})});
+    $('resetLinkValue').value=result.link; $('resetLinkResult').hidden=false; $('passwordStatus').textContent=result.mensagem+' Expira em '+dateLabel(result.expira_em)+'.';
+  } catch(error) { $('passwordStatus').textContent=error.message; }
+  finally { button.disabled=false; }
+});
+$('copyResetLink')?.addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('resetLinkValue').value);$('passwordStatus').textContent='Link copiado. Entregue-o ao usuário por um canal confirmado.';}catch(_){$('passwordStatus').textContent='Não foi possível copiar automaticamente. Selecione o link e copie manualmente.';}});
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>$(button.dataset.close).close()));
 $('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(reportText);$('detailStatus').textContent='Relatório copiado.';}catch(_){$('detailStatus').textContent='Não foi possível copiar. Selecione o texto e copie manualmente.';}});
 $('images').addEventListener('click',openImages);
