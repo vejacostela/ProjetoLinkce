@@ -461,14 +461,17 @@ TIPOS_IMAGEM = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif"
 }
 
-def detectar_possivel_duplicado(dados: dict) -> bool:
-    """Sinaliza possíveis reenvios recentes sem bloquear o técnico."""
+def detectar_possivel_duplicado(dados: dict, empresa_id: str = None) -> bool:
+    """Sinaliza reenvios recentes dentro da empresa atual, sem bloquear o técnico."""
     if not supabase_client:
         return False
     try:
         corte = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
-        result = (supabase_client.table("relatorios").select("id")
-                  .eq("user_id", dados.get("user_id"))
+        query = aplicar_empresa(
+            supabase_client.table("relatorios").select("id"),
+            empresa_id or DEFAULT_EMPRESA_ID,
+        )
+        result = (query.eq("user_id", dados.get("user_id"))
                   .eq("situacao_encontrada", dados.get("situacao_encontrada", ""))
                   .eq("resolucao_problema", dados.get("resolucao_problema", ""))
                   .gte("criado_em", corte).limit(1).execute())
@@ -708,7 +711,7 @@ Materiais Recolhidos:
         possivel_duplicado = detectar_possivel_duplicado({
             "user_id": user_id, "situacao_encontrada": relatorio_texto,
             "resolucao_problema": problema_tecnico,
-        })
+        }, getattr(request.state, "empresa_id", DEFAULT_EMPRESA_ID))
         created = salvar_relatorio({
             "id": data["request_id"],
             "tecnico":              tecnico,
