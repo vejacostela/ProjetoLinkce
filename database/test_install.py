@@ -32,7 +32,8 @@ def run():
             sql = (ROOT / 'database/install/install_cloud.sql').read_text()
             conn.execute(sql)
             conn.execute(sql)
-            assert conn.execute('SELECT count(*) FROM public.linkce_schema_migrations').fetchone()[0] == 7
+            expected_migrations = len(list((ROOT / 'database' / 'migrations').glob('*.sql')))
+            assert conn.execute('SELECT count(*) FROM public.linkce_schema_migrations').fetchone()[0] == expected_migrations
             if legacy:
                 assert conn.execute('SELECT ativo FROM public.empresas').fetchone()[0] is False
                 assert conn.execute('SELECT tecnico FROM public.relatorios').fetchone()[0] == 'Preservado'
