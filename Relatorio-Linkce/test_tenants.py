@@ -20,6 +20,7 @@ class Query:
     def eq(self, key, value): self.filters.append(lambda row: row.get(key) == value); return self
     def in_(self, key, values): self.filters.append(lambda row: row.get(key) in values); return self
     def lt(self, key, value): self.filters.append(lambda row: row.get(key, '') < value); return self
+    def gte(self, key, value): self.filters.append(lambda row: row.get(key, '') >= value); return self
     def order(self, *args, **kwargs): return self
     def limit(self, *args): return self
     def update(self, data): self.action = ('update', data); return self
@@ -107,6 +108,22 @@ class TenantTests(unittest.TestCase):
         response = self.client.post('/api/banco/limpeza', json={'confirmacao': 'EXCLUIR', 'limite': '2001-01-01T00:00:00+00:00'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row['id'] for row in self.db.rows['relatorios']], ['rb'])
+
+    def test_duplicate_detection_is_company_scoped(self):
+        agora = main.datetime.now(main.timezone.utc).isoformat()
+        comum = {
+            'user_id': USER['id'],
+            'situacao_encontrada': 'mesma situação',
+            'resolucao_problema': 'mesma resolução',
+            'criado_em': agora,
+        }
+        self.db.rows['relatorios'].extend([
+            {'id': 'dup-b', 'empresa_id': B, **comum},
+        ])
+        # Um relatório idêntico de outra empresa não pode ser sinalizado como duplicado.
+        self.assertFalse(main.detectar_possivel_duplicado(comum, A))
+        self.db.rows['relatorios'].append({'id': 'dup-a', 'empresa_id': A, **comum})
+        self.assertTrue(main.detectar_possivel_duplicado(comum, A))
 
     def test_password_reset_cannot_affect_shared_identity(self):
         self.db.rows['usuarios_empresas'].append({'usuario_id': USER['id'], 'empresa_id': B, 'ativo': True, 'papel': 'gestor'})
