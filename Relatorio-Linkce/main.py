@@ -1298,12 +1298,25 @@ def _reset_origin(request: Request) -> str:
 def _reset_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+@app.get("/api/seguranca/empresas-redefinicao")
+async def empresas_para_redefinicao(request: Request):
+    if not eh_admin_plataforma(request.state.user):
+        raise HTTPException(403, "Apenas a administração interna pode escolher outra empresa.")
+    if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
+        raise HTTPException(503, "Cadastro de empresas indisponível.")
+    try:
+        result = supabase_client.table("empresas").select("id,nome").eq("ativo", True).order("nome").execute()
+        return {"empresas": result.data or []}
+    except Exception:
+        raise HTTPException(503, "Não foi possível carregar as empresas.")
+
 @app.post("/api/seguranca/gerar-link-redefinicao")
 async def gerar_link_redefinicao(request: Request):
     try:
         data = await request.json()
         email = data.get("email", "").strip().lower() if isinstance(data, dict) and isinstance(data.get("email"), str) else ""
         motivo = data.get("motivo", "").strip() if isinstance(data, dict) and isinstance(data.get("motivo", ""), str) else ""
+        requested_empresa = data.get("empresa_id") if isinstance(data, dict) else None
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
             raise HTTPException(422, "Informe um email válido.")
         if len(motivo) > 300:
@@ -1312,21 +1325,43 @@ async def gerar_link_redefinicao(request: Request):
             raise HTTPException(503, "Banco de dados não configurado.")
         supabase_client.table("links_redefinicao_senha").select("id", head=True).limit(1).execute()
         target = _find_user_by_email(_admin_client(), email)
-        exigir_usuario_da_empresa(target.id, request)
+        if eh_admin_plataforma(request.state.user):
+            if not EMPRESA_TABLE_AVAILABLE or not requested_empresa:
+                raise HTTPException(422, "Selecione a empresa do usuário.")
+            try:
+                target_empresa = str(UUID(str(requested_empresa)))
+            except (ValueError, TypeError, AttributeError):
+                raise HTTPException(422, "Empresa selecionada inválida.")
+            membership = (supabase_client.table("usuarios_empresas").select("papel")
+                          .eq("usuario_id", target.id).eq("empresa_id", target_empresa)
+                          .eq("ativo", True).limit(1).execute().data or [])
+            active_company = (supabase_client.table("empresas").select("id")
+                              .eq("id", target_empresa).eq("ativo", True).limit(1).execute().data or [])
+            if not membership or not active_company:
+                raise HTTPException(404, "Este email não possui acesso ativo à empresa selecionada.")
+            if membership[0].get("papel") != "gestor":
+                raise HTTPException(403, "A administração interna pode redefinir gestores das empresas.")
+            target_empresa_id = target_empresa
+            request.state.empresa_id = target_empresa
+        else:
+            if requested_empresa and str(requested_empresa) != str(request.state.empresa_id):
+                raise HTTPException(403, "Você só pode gerar links para usuários da sua empresa.")
+            exigir_usuario_da_empresa(target.id, request)
+            target_empresa_id = request.state.empresa_id
         actor = request.state.user
         token = secrets.token_urlsafe(32)
         now = datetime.now(timezone.utc)
         expires = now + timedelta(minutes=30)
         query = (supabase_client.table("links_redefinicao_senha").update({"usado_em": now.isoformat()})
                  .eq("usuario_id", target.id).is_("usado_em", "null").gt("expira_em", now.isoformat()))
-        if EMPRESA_TABLE_AVAILABLE:
+        if EMPRESA_TABLE_AVAILABLE and not eh_admin_plataforma(request.state.user):
             query = query.eq("empresa_id", request.state.empresa_id)
         query.execute()
         payload = {"token_hash": _reset_hash(token), "usuario_id": target.id, "usuario_email": email,
                    "solicitado_por": actor["id"], "solicitado_por_email": (actor.get("email") or "").lower(),
                    "motivo": motivo or None, "expira_em": expires.isoformat()}
         if EMPRESA_TABLE_AVAILABLE:
-            payload["empresa_id"] = request.state.empresa_id
+            payload["empresa_id"] = target_empresa_id
         supabase_client.table("links_redefinicao_senha").insert(payload).execute()
         return {"link": f"{_reset_origin(request)}/nova-senha?token={token}", "expira_em": expires.isoformat(),
                 "mensagem": "Link criado. Entregue-o ao usuário por um canal confirmado."}
@@ -1452,7 +1487,7 @@ async def historico_senhas(request: Request, limite: int = Query(30, ge=1, le=10
     try:
         query = supabase_client.table("historico_redefinicao_senhas").select(
             "id,criado_em,gestor_email,usuario_email,motivo")
-        if EMPRESA_TABLE_AVAILABLE:
+        if EMPRESA_TABLE_AVAILABLE and not eh_admin_plataforma(request.state.user):
             query = query.eq("empresa_id", request.state.empresa_id)
         result = query.order("criado_em", desc=True).limit(limite).execute()
         return JSONResponse(content={"historico": result.data or []})

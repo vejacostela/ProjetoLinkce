@@ -92,7 +92,6 @@ async function api(path, options = {}) {
   if (lastError && !response) throw lastError;
   if (response.status === 428) { location.replace('/primeiro-acesso'); throw new Error('Conclua seu primeiro acesso.'); }
   if (response.status === 401) signedOut('Sua sessão expirou. Entre novamente.');
-  if (response.status === 403) signedOut('Seu perfil não permite esta operação.');
   if (!response.ok) throw new Error(typeof body?.detail === 'string' ? body.detail : 'Não foi possível concluir a operação. Tente novamente.');
   return body;
 }
@@ -533,7 +532,7 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   if (target === 'companies' && !currentUser?.app_metadata?.platform_admin) return;
   showManagement(target);
   if(target === 'user') $('userStatus').textContent='';
-  if(target === 'password') { $('passwordManagerForm').reset(); $('passwordStatus').textContent=''; await loadPasswordHistory(); }
+  if(target === 'password') { $('passwordManagerForm').reset(); $('resetLinkForm')?.reset(); $('resetLinkResult').hidden=true; $('passwordStatus').textContent=''; await loadPasswordHistory(); }
   if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; await loadBankStats(); }
   if(target === 'companies') { $('companyStatus').textContent=''; await loadEmpresas(); }
 }));
@@ -544,6 +543,14 @@ async function loadPasswordHistory() {
   try {
     const data = await api('/api/seguranca/historico-senhas?limite=30');
     const auditData = await api('/api/seguranca/auditoria?limite=100');
+    const scope=$('resetLinkCompany');
+    if(scope && currentUser?.app_metadata?.platform_admin) {
+      $('resetLinkCompanyLabel').hidden=false;
+      const companies=await api('/api/seguranca/empresas-redefinicao');
+      scope.replaceChildren(new Option('Selecione a empresa do gestor',''));
+      for(const empresa of (companies.empresas||[])) scope.add(new Option(empresa.nome,empresa.id));
+      scope.hidden=false; scope.required=true;
+    } else if(scope) { $('resetLinkCompanyLabel').hidden=true; scope.hidden=true; scope.required=false; }
     if(userId !== currentUser?.id || !Array.isArray(data.historico)) return;
     const fragment = document.createDocumentFragment();
     for(const item of data.historico) { const tr=document.createElement('tr'); for(const value of [dateLabel(item.criado_em),item.gestor_email,item.usuario_email,item.motivo || '—']) cell(tr,value || '—'); fragment.append(tr); }
@@ -567,7 +574,9 @@ $('resetLinkForm')?.addEventListener('submit',async event=>{
   event.preventDefault();
   const button=$('generateResetLink'); button.disabled=true; $('resetLinkResult').hidden=true; $('passwordStatus').textContent='Gerando link temporário...';
   try {
-    const result=await api('/api/seguranca/gerar-link-redefinicao',{method:'POST',body:JSON.stringify({email:$('resetLinkEmail').value.trim(),motivo:$('resetLinkReason').value.trim()})});
+    const payload={email:$('resetLinkEmail').value.trim(),motivo:$('resetLinkReason').value.trim()};
+    if(currentUser?.app_metadata?.platform_admin) payload.empresa_id=$('resetLinkCompany').value;
+    const result=await api('/api/seguranca/gerar-link-redefinicao',{method:'POST',body:JSON.stringify(payload)});
     $('resetLinkValue').value=result.link; $('resetLinkResult').hidden=false; $('passwordStatus').textContent=result.mensagem+' Expira em '+dateLabel(result.expira_em)+'.';
   } catch(error) { $('passwordStatus').textContent=error.message; }
   finally { button.disabled=false; }
