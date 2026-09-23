@@ -7,6 +7,7 @@ import zipfile
 import logging
 import hashlib
 import secrets
+import base64
 from datetime import date, time, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, UploadFile, File
@@ -24,7 +25,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-APP_VERSION = os.getenv("APP_VERSION", "2026.09.13")
+APP_VERSION = os.getenv("APP_VERSION", "2026.09.23")
 
 app.add_middleware(
     CORSMiddleware,
@@ -43,7 +44,8 @@ async def enforce_access(request, call_next):
     if path.startswith("/api/debug/") or path == "/api/materiais/recarregar":
         return JSONResponse({"detail": "Recurso indisponível."}, status_code=404)
     public_reset = path.startswith("/api/seguranca/redefinicao/")
-    protected = path.startswith("/api/") and path not in ("/api/config", "/api/materiais") and not public_reset
+    public_api = path in ("/api/config", "/api/materiais", "/api/auth/login") or public_reset
+    protected = path.startswith("/api/") and not public_api
     if protected or path == "/gerar_relatorio":
         try:
             user = await authenticate(request)
@@ -52,6 +54,7 @@ async def enforce_access(request, call_next):
                 raise HTTPException(428, 'Conclua seu primeiro acesso: senha e aviso de privacidade.')
             requested_empresa = None if path == '/api/empresas' and request.method == 'GET' else request.headers.get("X-Empresa-ID")
             request.state.empresa_id = empresa_id_do_usuario(user, requested_empresa)
+            validar_sessao_servidor(request, user)
             role = role_of(user)
             if path.startswith('/api/avisos') and request.method != 'GET' and role not in ('gestor', 'apoio'):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
@@ -315,6 +318,12 @@ REPORT_STATUS_AVAILABLE = False
 NOTICE_TENANT_AVAILABLE = False
 AUDIT_TENANT_AVAILABLE = False
 EMPRESA_TABLE_AVAILABLE = False
+AUTH_SECURITY_AVAILABLE = False
+
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCK_MINUTES = 15
+SESSION_IDLE_MINUTES = 30
+SESSION_ABSOLUTE_HOURS = 12
 
 PERMISSIONS = {
     "gestor": {
@@ -425,9 +434,89 @@ def aplicar_empresa_auditoria(query, request=None):
         return query.eq("empresa_id", getattr(getattr(request, "state", None), "empresa_id", DEFAULT_EMPRESA_ID))
     return query
 
+def _jwt_session_id(request: Request, user: dict) -> str:
+    """Extrai a sessão de um token já validado pelo Supabase."""
+    token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        value = str(claims.get("session_id") or "").strip()
+        if value:
+            return value[:200]
+    except (ValueError, TypeError, IndexError, json.JSONDecodeError):
+        pass
+    return hashlib.sha256((str(user.get("id")) + ":" + token).encode()).hexdigest()
+
+def validar_sessao_servidor(request: Request, user: dict):
+    """Aplica inatividade, expiração absoluta e revogação no servidor."""
+    if not (AUTH_SECURITY_AVAILABLE and supabase_client):
+        return
+    agora = datetime.now(timezone.utc)
+    sessao_id = _jwt_session_id(request, user)
+    rows = (supabase_client.table("sessoes_ativas")
+            .select("sessao_id,ultima_atividade_em,expira_em,revogada_em")
+            .eq("sessao_id", sessao_id).limit(1).execute().data or [])
+    if rows:
+        row = rows[0]
+        try:
+            ultima = datetime.fromisoformat(str(row["ultima_atividade_em"]).replace("Z", "+00:00"))
+            expira = datetime.fromisoformat(str(row["expira_em"]).replace("Z", "+00:00"))
+        except (ValueError, TypeError, KeyError):
+            raise HTTPException(401, "Sessão inválida. Entre novamente.")
+        if row.get("revogada_em") or expira <= agora or ultima <= agora - timedelta(minutes=SESSION_IDLE_MINUTES):
+            raise HTTPException(401, "Sua sessão expirou. Entre novamente.")
+        if ultima <= agora - timedelta(seconds=60):
+            supabase_client.table("sessoes_ativas").update({
+                "ultima_atividade_em": agora.isoformat()
+            }).eq("sessao_id", sessao_id).execute()
+    else:
+        supabase_client.table("sessoes_ativas").insert({
+            "sessao_id": sessao_id,
+            "usuario_id": user["id"],
+            "empresa_id": getattr(request.state, "empresa_id", None),
+            "ultima_atividade_em": agora.isoformat(),
+            "expira_em": (agora + timedelta(hours=SESSION_ABSOLUTE_HOURS)).isoformat(),
+        }).execute()
+    request.state.session_id = sessao_id
+
+def revogar_sessoes_usuario(usuario_id):
+    if not (AUTH_SECURITY_AVAILABLE and supabase_client):
+        return
+    supabase_client.table("sessoes_ativas").update({
+        "revogada_em": datetime.now(timezone.utc).isoformat()
+    }).eq("usuario_id", str(usuario_id)).is_("revogada_em", "null").execute()
+
+def _login_key(request: Request, email: str) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    address = forwarded or getattr(getattr(request, "client", None), "host", "unknown")
+    salt = os.getenv("AUTH_RATE_LIMIT_SECRET") or SUPABASE_SERVICE_KEY
+    return hashlib.sha256(f"{salt}|{email.casefold()}|{address}".encode()).hexdigest()
+
+def _login_state(chave: str):
+    if not (AUTH_SECURITY_AVAILABLE and supabase_client):
+        return None
+    rows = (supabase_client.table("login_tentativas")
+            .select("falhas,bloqueado_ate,ultima_tentativa_em")
+            .eq("chave_hash", chave).limit(1).execute().data or [])
+    return rows[0] if rows else None
+
+def registrar_falha_login(chave: str, atual=None):
+    if not (AUTH_SECURITY_AVAILABLE and supabase_client):
+        return False
+    agora = datetime.now(timezone.utc)
+    falhas = int((atual or {}).get("falhas") or 0) + 1
+    bloqueado = falhas >= LOGIN_MAX_ATTEMPTS
+    supabase_client.table("login_tentativas").upsert({
+        "chave_hash": chave,
+        "falhas": 0 if bloqueado else falhas,
+        "bloqueado_ate": (agora + timedelta(minutes=LOGIN_LOCK_MINUTES)).isoformat() if bloqueado else None,
+        "ultima_tentativa_em": agora.isoformat(),
+    }, on_conflict="chave_hash").execute()
+    return bloqueado
+
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
-    global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
+    global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE, AUTH_SECURITY_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -440,6 +529,7 @@ def init_supabase():
             ("avisos_operacao", "empresa_id", "NOTICE_TENANT_AVAILABLE"),
             ("auditoria_gestao", "empresa_id", "AUDIT_TENANT_AVAILABLE"),
             ("empresas", "id", "EMPRESA_TABLE_AVAILABLE"),
+            ("sessoes_ativas", "sessao_id", "AUTH_SECURITY_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -595,6 +685,67 @@ async def get_config():
         "supabase_url": SUPABASE_URL,
         "supabase_key": SUPABASE_KEY,
     })
+
+@app.post("/api/auth/login")
+async def login_protegido(request: Request):
+    """Autentica sem expor respostas internas e limita tentativas por email e origem."""
+    try:
+        tamanho = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        tamanho = 0
+    if tamanho > 4096:
+        raise HTTPException(413, "Solicitação de login muito grande.")
+    try:
+        data = await request.json()
+        email = data.get("email", "").strip().lower() if isinstance(data, dict) else ""
+        senha = data.get("password", "") if isinstance(data, dict) else ""
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email) or not isinstance(senha, str) or not senha:
+            raise ValueError()
+    except (ValueError, AttributeError, TypeError, json.JSONDecodeError):
+        raise HTTPException(422, "Informe email e senha válidos.")
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise HTTPException(503, "Autenticação não configurada.")
+
+    chave = _login_key(request, email)
+    state = _login_state(chave)
+    agora = datetime.now(timezone.utc)
+    if state and state.get("bloqueado_ate"):
+        try:
+            bloqueado_ate = datetime.fromisoformat(str(state["bloqueado_ate"]).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            bloqueado_ate = agora + timedelta(minutes=LOGIN_LOCK_MINUTES)
+        if bloqueado_ate > agora:
+            espera = max(1, int((bloqueado_ate - agora).total_seconds()))
+            return JSONResponse({"code": "login_rate_limited", "message": "Muitas tentativas. Aguarde e tente novamente."},
+                                status_code=429, headers={"Retry-After": str(espera), "Cache-Control": "no-store"})
+        supabase_client.table("login_tentativas").delete().eq("chave_hash", chave).execute()
+        state = None
+
+    try:
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.post(
+                SUPABASE_URL.rstrip("/") + "/auth/v1/token?grant_type=password",
+                headers={"apikey": SUPABASE_KEY, "Content-Type": "application/json"},
+                json={"email": email, "password": senha},
+            )
+    except httpx.HTTPError:
+        raise HTTPException(503, "Serviço de autenticação indisponível.")
+
+    if response.status_code == 200:
+        if AUTH_SECURITY_AVAILABLE:
+            supabase_client.table("login_tentativas").delete().eq("chave_hash", chave).execute()
+        return JSONResponse(response.json(), headers={"Cache-Control": "no-store"})
+    if response.status_code in (400, 401, 422):
+        bloqueado = registrar_falha_login(chave, state)
+        status = 429 if bloqueado else 401
+        code = "login_rate_limited" if bloqueado else "invalid_credentials"
+        message = "Muitas tentativas. Aguarde e tente novamente." if bloqueado else "Email ou senha incorretos."
+        return JSONResponse({"code": code, "message": message}, status_code=status,
+                            headers={"Cache-Control": "no-store"})
+    if response.status_code == 429:
+        return JSONResponse({"code": "login_rate_limited", "message": "Muitas tentativas. Aguarde e tente novamente."},
+                            status_code=429, headers={"Cache-Control": "no-store"})
+    raise HTTPException(503, "Serviço de autenticação indisponível.")
 
 # === PÁGINAS ===
 @app.get("/recuperar-senha", response_class=HTMLResponse)
@@ -1115,7 +1266,8 @@ async def primeiro_acesso_privacidade(request: Request):
         _admin_client().auth.admin.update_user_by_id(request.state.user['id'], {'app_metadata': {
             **meta, 'onboarding_required': False, 'privacy_notice_version': version,
             'privacy_notice_url': notice, 'privacy_acknowledged_at': datetime.now(timezone.utc).isoformat()}})
-    return {'concluido': True}
+    revogar_sessoes_usuario(request.state.user['id'])
+    return {'concluido': True, 'novo_login': True}
 
 @app.post("/api/empresas/{empresa_id}/acesso")
 async def ajustar_acesso_empresa(empresa_id: UUID, request: Request):
@@ -1415,6 +1567,7 @@ async def concluir_redefinicao(request: Request):
         except Exception:
             supabase_client.table("links_redefinicao_senha").update({"usado_em": None}).eq("id", row["id"]).execute()
             raise HTTPException(503, "A nova senha não foi salva. Tente novamente.")
+        revogar_sessoes_usuario(row["usuario_id"])
         history = {"gestor_id": row["solicitado_por"], "gestor_email": row["solicitado_por_email"],
                    "usuario_id": row["usuario_id"], "usuario_email": row["usuario_email"],
                    "motivo": row.get("motivo") or "Redefinição por link temporário"}
@@ -1526,6 +1679,7 @@ async def redefinir_senha(request: Request):
         if not actor_email:
             raise HTTPException(status_code=401, detail="Sessão sem email válido.")
         admin.auth.admin.update_user_by_id(target.id, {"password": senha})
+        revogar_sessoes_usuario(target.id)
         supabase_client.table("historico_redefinicao_senhas").insert({
             "gestor_id": actor["id"], "gestor_email": actor_email.lower(),
             "usuario_id": target.id, "usuario_email": email, "motivo": motivo or None,
@@ -1872,6 +2026,7 @@ async def health_check():
             "supabase": supabase_ok, "materiais": bool(MATERIAIS_CACHE),
             "filtro_empresa": TENANT_COLUMN_AVAILABLE,
             "status_relatorio": REPORT_STATUS_AVAILABLE,
+            "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
         },
     }
 
@@ -1886,6 +2041,7 @@ async def saude_detalhada(request: Request):
             "avisos_por_empresa": NOTICE_TENANT_AVAILABLE,
             "auditoria_por_empresa": AUDIT_TENANT_AVAILABLE,
             "multiempresa": EMPRESA_TABLE_AVAILABLE,
+            "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })

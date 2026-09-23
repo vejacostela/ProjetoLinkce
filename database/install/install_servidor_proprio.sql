@@ -476,5 +476,50 @@ $linkce_migration$;
     INSERT INTO public.linkce_schema_migrations(versao, checksum) VALUES ('009_links_redefinicao.sql', '545140b6495feac02c68be09e73a90e6713bfd103b1a1a2c57e6a155df5cbeb0');
   END IF;
 END $linkce_step$;
+
+-- 010_autenticacao_sessoes.sql
+DO $linkce_step$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.linkce_schema_migrations
+             WHERE versao = '010_autenticacao_sessoes.sql' AND checksum <> '040e938c8fe7cc62f77988122e47230e12ac6164d9b6ac4793d0770e65a4b925') THEN
+    RAISE EXCEPTION 'Migração já aplicada foi alterada: 010_autenticacao_sessoes.sql';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.linkce_schema_migrations WHERE versao = '010_autenticacao_sessoes.sql') THEN
+    EXECUTE $linkce_migration$-- Proteção persistente de login e sessões. A aplicação acessa estas tabelas
+-- somente com a service_role; navegador e usuários autenticados não têm acesso.
+CREATE TABLE IF NOT EXISTS public.login_tentativas (
+  chave_hash text PRIMARY KEY CHECK (length(chave_hash) = 64),
+  falhas smallint NOT NULL DEFAULT 0 CHECK (falhas BETWEEN 0 AND 100),
+  bloqueado_ate timestamptz,
+  ultima_tentativa_em timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.sessoes_ativas (
+  sessao_id text PRIMARY KEY CHECK (length(sessao_id) BETWEEN 8 AND 200),
+  usuario_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  empresa_id uuid REFERENCES public.empresas(id) ON DELETE CASCADE,
+  criada_em timestamptz NOT NULL DEFAULT now(),
+  ultima_atividade_em timestamptz NOT NULL DEFAULT now(),
+  expira_em timestamptz NOT NULL,
+  revogada_em timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS sessoes_ativas_usuario_idx
+  ON public.sessoes_ativas(usuario_id, revogada_em, ultima_atividade_em DESC);
+CREATE INDEX IF NOT EXISTS sessoes_ativas_empresa_idx
+  ON public.sessoes_ativas(empresa_id, revogada_em, ultima_atividade_em DESC);
+CREATE INDEX IF NOT EXISTS login_tentativas_limpeza_idx
+  ON public.login_tentativas(ultima_tentativa_em);
+
+ALTER TABLE public.login_tentativas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sessoes_ativas ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.login_tentativas FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON public.sessoes_ativas FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.login_tentativas TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.sessoes_ativas TO service_role;
+$linkce_migration$;
+    INSERT INTO public.linkce_schema_migrations(versao, checksum) VALUES ('010_autenticacao_sessoes.sql', '040e938c8fe7cc62f77988122e47230e12ac6164d9b6ac4793d0770e65a4b925');
+  END IF;
+END $linkce_step$;
 COMMIT;
 SELECT versao, aplicado_em FROM public.linkce_schema_migrations ORDER BY versao;

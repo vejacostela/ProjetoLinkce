@@ -100,10 +100,12 @@
 
     async function signInWithPassword(credentials) {
       try {
-        const value = normalizeSession(await request('token?grant_type=password', {
-          method: 'POST',
-          body: JSON.stringify({email: String(credentials?.email || '').trim(), password: String(credentials?.password || '')})
-        }));
+        const response = await fetch('/api/auth/login', {method: 'POST', cache: 'no-store',
+          headers: {'content-type': 'application/json'}, credentials: 'omit',
+          body: JSON.stringify({email: String(credentials?.email || '').trim(), password: String(credentials?.password || '')})});
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw makeError(response, body);
+        const value = normalizeSession(body);
         if (!value?.user) throw new Error('Sessão de login inválida.');
         save(value); emit('SIGNED_IN', value);
         return {data: {user: value.user, session: value}, error: null};
@@ -171,5 +173,4 @@
 
   root.supabase = {createClient: createAuthClient};
 })(window);
-
 

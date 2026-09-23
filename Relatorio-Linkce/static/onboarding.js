@@ -46,7 +46,7 @@
     event.preventDefault(); const button=event.submitter; button.disabled=true;
     try {
       await api('/api/primeiro-acesso/privacidade',{ciencia:el('ack').checked,versao:version});
-      await client.auth.getUser(); location.replace('/');
+      await client.auth.signOut(); location.replace('/');
     } catch(error) {el('status').textContent=error.message;} finally {button.disabled=false;}
   });
 })();
