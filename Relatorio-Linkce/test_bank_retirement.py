@@ -29,7 +29,8 @@ class BankTests(unittest.TestCase):
             with patch.object(main,'authenticate',self.identity(role)),patch.object(main,'supabase_client',bank):
                 self.assertEqual(self.client.get('/api/banco/previa').status_code,403)
                 self.assertEqual(self.client.post('/api/banco/limpeza',json={}).status_code,403)
-            self.assertEqual(bank.calls,[])
+            self.assertNotIn('delete',[c[0] for c in bank.calls])
+            self.assertTrue(all(c[1] == ('auditoria_gestao',) for c in bank.calls if c[0] == 'table'))
     def test_preview_never_deletes(self):
         bank=FakeBank()
         with patch.object(main,'authenticate',self.identity('gestor')),patch.object(main,'supabase_client',bank):
@@ -43,7 +44,9 @@ class BankTests(unittest.TestCase):
         with patch.object(main,'authenticate',self.identity('gestor')),patch.object(main,'supabase_client',bank):
             for body in ({},[],{'confirmacao':'EXCLUIR','limite':'bad'}, {'confirmacao':'EXCLUIR','limite':datetime.now(timezone.utc).isoformat()}, {'confirmacao':'EXCLUIR','limite':'2020-01-01T00:00:00'}):
                 self.assertEqual(self.client.post('/api/banco/limpeza',json=body).status_code,422)
-        self.assertEqual(bank.calls,[])
+        self.assertNotIn('delete',[c[0] for c in bank.calls])
+        self.assertNotIn('lt',[c[0] for c in bank.calls])
+        self.assertTrue(all(c[1] == ('auditoria_gestao',) for c in bank.calls if c[0] == 'table'))
     def test_confirmed_delete_uses_exact_cutoff(self):
         bank=FakeBank();cutoff=(datetime.now(timezone.utc)-timedelta(days=30)).isoformat()
         with patch.object(main,'authenticate',self.identity('gestor')),patch.object(main,'supabase_client',bank):

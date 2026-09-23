@@ -82,6 +82,7 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         try:
             user = await authenticate(request)
+            request.state.user = user
             metadata = user.get('app_metadata') or {}
             if metadata.get('onboarding_required') is True and not path.startswith('/api/primeiro-acesso'):
                 raise HTTPException(428, 'Conclua seu primeiro acesso: senha e aviso de privacidade.')
@@ -114,8 +115,9 @@ async def enforce_access(request, call_next):
             elif (path.startswith("/api/relatorios") and not (path.endswith("/imagens") and request.method == "POST")
                   and role not in ("gestor", "apoio")):
                 raise HTTPException(403, "Acesso não autorizado.")
-            request.state.user = user
         except HTTPException as exc:
+            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/')) and hasattr(request.state, 'user'):
+                registrar_auditoria(request, f'{request.method} {path}', 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             for key, value in (exc.headers or {}).items():
                 response.headers[key] = value
@@ -129,11 +131,12 @@ async def enforce_access(request, call_next):
         response.headers["X-RateLimit-Reset"] = str(request.state.rate_limit_reset)
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
-    if response.status_code < 400 and path != '/api/seguranca/redefinir-senha' and (
+    if path != '/api/seguranca/redefinir-senha' and (
         path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso')) or
         (path.startswith('/api/relatorios/') and path.endswith('/imagens') and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
-        registrar_auditoria(request, f'{request.method} {path}', 'sucesso')
+        resultado = 'sucesso' if response.status_code < 400 else ('negado' if response.status_code < 500 else 'erro')
+        registrar_auditoria(request, f'{request.method} {path}', resultado, response.status_code)
     return response
 
 # === WHATSAPP ===
@@ -182,7 +185,7 @@ def registrar_historico_aviso(request: Request, acao: str, *, modelo_id=None,
         logger.warning('Histórico de avisos indisponível: %s', exc)
 
 
-def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso'):
+def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso', status_code: int = None):
     if not supabase_client:
         return
     user = getattr(request.state, 'user', {}) or {}
@@ -192,6 +195,16 @@ def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso')
             'resultado': resultado[:40], 'usuario_id': user.get('id'),
             'usuario_email': user.get('email', '')[:254],
         }
+        if AUDIT_SECURITY_AVAILABLE:
+            address = _client_address(request)
+            agent = request.headers.get('user-agent', '')[:500]
+            salt = os.getenv('AUDIT_HASH_SECRET') or SUPABASE_SERVICE_KEY
+            payload.update({
+                'request_id': getattr(request.state, 'request_id', '')[:64] or None,
+                'status_code': int(status_code) if status_code else None,
+                'ip_hash': hashlib.sha256(f'{salt}|ip|{address}'.encode()).hexdigest(),
+                'user_agent_hash': hashlib.sha256(f'{salt}|ua|{agent}'.encode()).hexdigest(),
+            })
         if AUDIT_TENANT_AVAILABLE:
             payload['empresa_id'] = getattr(request.state, 'empresa_id', DEFAULT_EMPRESA_ID)
         supabase_client.table('auditoria_gestao').insert(payload).execute()
@@ -360,6 +373,7 @@ EMPRESA_TABLE_AVAILABLE = False
 AUTH_SECURITY_AVAILABLE = False
 API_SECURITY_AVAILABLE = False
 IMAGE_SECURITY_AVAILABLE = False
+AUDIT_SECURITY_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -622,7 +636,7 @@ def registrar_falha_login(chave: str, atual=None):
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
     global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
-    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -638,6 +652,7 @@ def init_supabase():
             ("sessoes_ativas", "sessao_id", "AUTH_SECURITY_AVAILABLE"),
             ("api_rate_limits", "chave_hash", "API_SECURITY_AVAILABLE"),
             ("relatorio_imagens", "empresa_id,sha256", "IMAGE_SECURITY_AVAILABLE"),
+            ("auditoria_gestao", "request_id,status_code,ip_hash,user_agent_hash", "AUDIT_SECURITY_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -1746,8 +1761,10 @@ async def consultar_auditoria(
     if not supabase_client:
         raise HTTPException(503, "Banco de dados não configurado.")
     try:
-        query = (supabase_client.table("auditoria_gestao")
-                 .select("id,acao,metodo,rota,resultado,usuario_email,usuario_id,empresa_id,criado_em", count="exact"))
+        fields = "id,acao,metodo,rota,resultado,usuario_email,usuario_id,empresa_id,criado_em"
+        if AUDIT_SECURITY_AVAILABLE:
+            fields += ",request_id,status_code"
+        query = supabase_client.table("auditoria_gestao").select(fields, count="exact")
         query = aplicar_empresa_auditoria(query, request)
         if usuario_email:
             query = query.ilike("usuario_email", f"%{usuario_email.strip()}%")
@@ -2183,6 +2200,7 @@ async def health_check():
             "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
             "protecao_api": API_SECURITY_AVAILABLE,
             "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
+            "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
         },
     }
 
@@ -2200,6 +2218,7 @@ async def saude_detalhada(request: Request):
             "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
             "protecao_api": API_SECURITY_AVAILABLE,
             "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
+            "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })

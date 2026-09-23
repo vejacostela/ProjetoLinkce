@@ -58,6 +58,10 @@ def run():
                     "SELECT has_table_privilege(%s,'public.relatorio_imagens','SELECT')",
                     (role,),
                 ).fetchone()[0]
+                assert not conn.execute(
+                    "SELECT has_function_privilege(%s,'public.linkce_bloquear_alteracao_auditoria()','EXECUTE')",
+                    (role,),
+                ).fetchone()[0]
             image_columns = dict(conn.execute("""
                 SELECT column_name, is_nullable
                 FROM information_schema.columns
@@ -65,6 +69,12 @@ def run():
                   AND column_name IN ('empresa_id', 'sha256')
             """).fetchall())
             assert image_columns == {'empresa_id': 'NO', 'sha256': 'YES'}
+            audit_columns = {row[0] for row in conn.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='auditoria_gestao'
+                  AND column_name IN ('request_id','status_code','ip_hash','user_agent_hash')
+            """).fetchall()}
+            assert audit_columns == {'request_id', 'status_code', 'ip_hash', 'user_agent_hash'}
             rate_key = 'a' * 64
             first = conn.execute(
                 'SELECT permitido, restante FROM public.linkce_consumir_limite(%s, 60, 2)',

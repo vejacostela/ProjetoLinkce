@@ -1,4 +1,4 @@
-const CACHE = 'gestao-campo-v7';
+const CACHE = 'gestao-campo-v8';
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
 const SHELL = ['/tecnico', '/panel-assets/design-system.css?v=1', '/static/notices-tech.js?v=2', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
@@ -273,6 +273,11 @@ async function notificarClientes(mensagem) {
 
 async function sincronizarFila() {
   if (sincronizando || !authSession) return;
+  if (!authSession.expiresAt || Number(authSession.expiresAt) <= Math.floor(Date.now() / 1000) + 30) {
+    authSession = null;
+    await notificarClientes({type:'AUTH_EXPIRED'});
+    return;
+  }
   sincronizando = true;
   try {
     const fila = await buscarFila();
@@ -343,7 +348,10 @@ self.addEventListener('message', e => {
     return;
   }
   if (e.data?.type === 'AUTH_SESSION') {
-    authSession = { token: e.data.token, userId: e.data.userId, empresaId: e.data.empresaId || null };
+    const expiresAt = Number(e.data.expiresAt || 0);
+    authSession = e.data.token && e.data.userId && expiresAt > Math.floor(Date.now() / 1000) + 30
+      ? { token: e.data.token, userId: e.data.userId, empresaId: e.data.empresaId || null, expiresAt }
+      : null;
   }
   if (e.data?.type === 'CLEAR_SESSION') authSession = null;
   if (e.data?.type === 'SALVAR_FOTOS_OFFLINE') {

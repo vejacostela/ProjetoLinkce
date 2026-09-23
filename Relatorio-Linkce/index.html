@@ -1196,11 +1196,16 @@ let currentUser = null;
 let idleTimer;
 function iniciarExpiracaoSessao() {
   clearTimeout(idleTimer);
-  const reset = () => { clearTimeout(idleTimer); idleTimer = setTimeout(async () => { try { await sbClient?.auth.signOut({scope:'local'}); } finally { currentUser=null; localStorage.removeItem('linkce_user'); mostrarLogin(); const el=document.getElementById('loginError'); el.textContent='Sessão encerrada por inatividade. Entre novamente.'; el.style.display='block'; } }, 30*60*1000); };
+  const reset = () => { clearTimeout(idleTimer); idleTimer = setTimeout(async () => { try { navigator.serviceWorker.controller?.postMessage({type:'CLEAR_SESSION'}); await sbClient?.auth.signOut({scope:'local'}); } finally { currentUser=null; mostrarLogin(); const el=document.getElementById('loginError'); el.textContent='Sessão encerrada por inatividade. Entre novamente.'; el.style.display='block'; } }, 30*60*1000); };
   ['click','keydown','pointerdown','touchstart'].forEach(type=>window.addEventListener(type,reset,{passive:true}));
   reset();
 }
 const notices=window.installNotices(apiFetch,()=>currentUser);
+
+function sessaoLocalValida(session) {
+  const expira = Number(session?.expires_at || 0);
+  return Boolean(session?.access_token && session?.user?.id && expira > Math.floor(Date.now() / 1000) + 30);
+}
 
 async function initAuth() {
   try {
@@ -1219,6 +1224,8 @@ async function initAuth() {
     }
     const { createClient } = supabase;
     sbClient = createClient(cfg.supabase_url, cfg.supabase_key, { auth: { storageKey: 'linkce-management-auth' } });
+    // Remove o legado inseguro: identificação isolada nunca equivale a uma sessão autenticada.
+    localStorage.removeItem('linkce_user');
 
     // getSession pode falhar offline se o token expirou e o SDK tenta renovar via rede
     let session = null;
@@ -1227,38 +1234,29 @@ async function initAuth() {
       session = result.data?.session || null;
     } catch (_) {}
 
-    if (session) {
+    if (sessaoLocalValida(session)) {
       currentUser = session.user;
-      localStorage.setItem('linkce_user', JSON.stringify(session.user));
       mostrarApp(session.user);
     } else {
-      // Sem sessão ativa: usa o último usuário salvo (permite operar offline)
-      const salvo = JSON.parse(localStorage.getItem('linkce_user') || 'null');
-      if (salvo && !navigator.onLine) {
-        currentUser = salvo;
-        mostrarApp(salvo);
-      } else {
-        mostrarLogin();
-      }
+      navigator.serviceWorker.controller?.postMessage({type:'CLEAR_SESSION'});
+      mostrarLogin();
     }
 
     sbClient.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN') {
         currentUser = session.user;
-        localStorage.setItem('linkce_user', JSON.stringify(session.user));
         mostrarApp(session.user);
       }
       if (event === 'SIGNED_OUT') {
         currentUser = null;
-        localStorage.removeItem('linkce_user');
+        navigator.serviceWorker.controller?.postMessage({type:'CLEAR_SESSION'});
         mostrarLogin();
       }
     });
   } catch(e) {
-    // Fallback total: usa usuário cacheado se offline
-    const salvo = JSON.parse(localStorage.getItem('linkce_user') || 'null');
-    if (salvo && !navigator.onLine) { currentUser = salvo; mostrarApp(salvo); }
-    else mostrarLogin();
+    localStorage.removeItem('linkce_user');
+    navigator.serviceWorker.controller?.postMessage({type:'CLEAR_SESSION'});
+    mostrarLogin();
   }
 }
 
@@ -1866,11 +1864,14 @@ function pedirContagemFila() {
 async function sincronizarAgora() {
   let session;
   try { session = (await sbClient.auth.getSession()).data.session; } catch (_) { return; }
-  if (!session) return;
+  if (!sessaoLocalValida(session)) {
+    navigator.serviceWorker.controller?.postMessage({type:'CLEAR_SESSION'});
+    return;
+  }
   if (!('serviceWorker' in navigator)) return;
   navigator.serviceWorker.ready.then(reg => {
     const worker = navigator.serviceWorker.controller || reg.active || reg.waiting;
-    worker?.postMessage({ type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id, empresaId: localStorage.getItem('linkce-empresa-id') || null });
+    worker?.postMessage({ type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id, empresaId: localStorage.getItem('linkce-empresa-id') || null, expiresAt: session.expires_at });
     // Background Sync API: o browser deduplica — não dispara duas vezes
     if ('sync' in reg) {
       reg.sync.register('sync-relatorios').catch(() => worker?.postMessage({ type: 'SYNC_NOW' }));
@@ -1936,6 +1937,15 @@ if ('serviceWorker' in navigator) {
     if (type === 'SYNC_ERRO') {
       mostrarToastSistema(`⚠️ ${failed || e.data.falhas || 0} item(ns) aguardando conexão ou revisão.`);
       pedirContagemFila();
+    }
+
+    if (type === 'AUTH_EXPIRED') {
+      currentUser = null;
+      sbClient?.auth.signOut().catch(() => {});
+      mostrarLogin();
+      const aviso = document.getElementById('loginError');
+      aviso.textContent = 'Sua sessão expirou. Entre novamente para sincronizar os itens pendentes.';
+      aviso.style.display = 'block';
     }
 
     if (type === 'CONTAGEM_FILA') {
