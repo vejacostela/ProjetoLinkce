@@ -50,6 +50,21 @@ def run():
                     "SELECT has_function_privilege(%s,'public.linkce_consumir_limite(text,integer,integer)','EXECUTE')",
                     (role,),
                 ).fetchone()[0]
+                assert not conn.execute(
+                    "SELECT has_function_privilege(%s,'public.linkce_validar_empresa_imagem()','EXECUTE')",
+                    (role,),
+                ).fetchone()[0]
+                assert not conn.execute(
+                    "SELECT has_table_privilege(%s,'public.relatorio_imagens','SELECT')",
+                    (role,),
+                ).fetchone()[0]
+            image_columns = dict(conn.execute("""
+                SELECT column_name, is_nullable
+                FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='relatorio_imagens'
+                  AND column_name IN ('empresa_id', 'sha256')
+            """).fetchall())
+            assert image_columns == {'empresa_id': 'NO', 'sha256': 'YES'}
             rate_key = 'a' * 64
             first = conn.execute(
                 'SELECT permitido, restante FROM public.linkce_consumir_limite(%s, 60, 2)',

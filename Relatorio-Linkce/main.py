@@ -359,6 +359,7 @@ AUDIT_TENANT_AVAILABLE = False
 EMPRESA_TABLE_AVAILABLE = False
 AUTH_SECURITY_AVAILABLE = False
 API_SECURITY_AVAILABLE = False
+IMAGE_SECURITY_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -621,7 +622,7 @@ def registrar_falha_login(chave: str, atual=None):
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
     global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
-    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -636,6 +637,7 @@ def init_supabase():
             ("empresas", "id", "EMPRESA_TABLE_AVAILABLE"),
             ("sessoes_ativas", "sessao_id", "AUTH_SECURITY_AVAILABLE"),
             ("api_rate_limits", "chave_hash", "API_SECURITY_AVAILABLE"),
+            ("relatorio_imagens", "empresa_id,sha256", "IMAGE_SECURITY_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -656,6 +658,48 @@ MAX_TAMANHO_TOTAL_IMAGENS = 50 * 1024 * 1024
 TIPOS_IMAGEM = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/avif": ".avif"
 }
+
+def _detectar_tipo_imagem(conteudo: bytes):
+    """Valida a assinatura real do arquivo, sem confiar no tipo informado pelo navegador."""
+    if conteudo.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if conteudo.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(conteudo) >= 12 and conteudo[:4] == b"RIFF" and conteudo[8:12] == b"WEBP":
+        return "image/webp"
+    if len(conteudo) >= 16 and conteudo[4:8] == b"ftyp" and any(
+        marca in conteudo[8:32] for marca in (b"avif", b"avis")
+    ):
+        return "image/avif"
+    return None
+
+def _nome_original_seguro(nome: str):
+    nome = str(nome or "evidencia").replace("\\", "/").split("/")[-1]
+    nome = re.sub(r"[\x00-\x1f\x7f]+", "", nome).strip()
+    return (nome or "evidencia")[:180]
+
+async def _ler_imagem_segura(arquivo: UploadFile):
+    conteudo = await arquivo.read(MAX_TAMANHO_IMAGEM + 1)
+    if not conteudo or len(conteudo) > MAX_TAMANHO_IMAGEM:
+        raise HTTPException(422, "Cada imagem deve ter no máximo 8 MB.")
+    detectado = _detectar_tipo_imagem(conteudo)
+    declarado = (arquivo.content_type or "").lower()
+    if not detectado or (declarado in TIPOS_IMAGEM and declarado != detectado):
+        raise HTTPException(422, "O conteúdo do arquivo não corresponde a uma imagem JPG, PNG, WEBP ou AVIF válida.")
+    return detectado, conteudo
+
+def _filtrar_imagem_empresa(query, request: Request):
+    if IMAGE_SECURITY_AVAILABLE:
+        return query.eq("empresa_id", request.state.empresa_id)
+    return query
+
+def _dados_seguranca_imagem(request: Request, conteudo: bytes):
+    if not IMAGE_SECURITY_AVAILABLE:
+        return {}
+    return {
+        "empresa_id": request.state.empresa_id,
+        "sha256": hashlib.sha256(conteudo).hexdigest(),
+    }
 
 def detectar_possivel_duplicado(dados: dict, empresa_id: str = None) -> bool:
     """Sinaliza reenvios recentes dentro da empresa atual, sem bloquear o técnico."""
@@ -1830,7 +1874,7 @@ def _buscar_relatorio_evidencia(relatorio_id: UUID, request: Request = None):
 
 def _url_assinada_evidencia(path: str):
     try:
-        result = supabase_client.storage.from_(EVIDENCIAS_BUCKET).create_signed_url(path, 3600)
+        result = supabase_client.storage.from_(EVIDENCIAS_BUCKET).create_signed_url(path, 300)
         data = getattr(result, "data", result)
         url = data.get("signedURL") or data.get("signed_url")
         if not url:
@@ -1845,9 +1889,10 @@ def _url_assinada_evidencia(path: str):
 async def listar_imagens_relatorio(relatorio_id: UUID, request: Request):
     _buscar_relatorio_evidencia(relatorio_id, request)
     try:
-        result = supabase_client.table("relatorio_imagens").select(
+        query = supabase_client.table("relatorio_imagens").select(
             "id,criado_em,nome_original,tipo,tamanho_bytes,caminho"
-        ).eq("relatorio_id", str(relatorio_id)).order("criado_em").execute()
+        ).eq("relatorio_id", str(relatorio_id))
+        result = _filtrar_imagem_empresa(query, request).order("criado_em").execute()
         imagens = []
         for imagem in result.data or []:
             imagens.append({
@@ -1874,37 +1919,32 @@ async def adicionar_imagens_relatorio(relatorio_id: UUID, request: Request, arqu
     if not arquivos or len(arquivos) > MAX_IMAGENS_POR_ENVIO:
         raise HTTPException(422, f"Envie de 1 a {MAX_IMAGENS_POR_ENVIO} imagens por vez.")
     try:
-        existentes = (supabase_client.table("relatorio_imagens")
-                      .select("id,tamanho_bytes")
-                      .eq("relatorio_id", str(relatorio_id))
-                      .execute().data or [])
+        query = (supabase_client.table("relatorio_imagens")
+                 .select("id,tamanho_bytes").eq("relatorio_id", str(relatorio_id)))
+        existentes = (_filtrar_imagem_empresa(query, request).execute().data or [])
         if len(existentes) + len(arquivos) > MAX_IMAGENS_POR_RELATORIO:
             raise HTTPException(422, f"Cada relatório aceita até {MAX_IMAGENS_POR_RELATORIO} imagens.")
         uploads = []
         tamanho_total = sum(int(item.get("tamanho_bytes") or 0) for item in existentes)
         for arquivo in arquivos:
-            tipo = (arquivo.content_type or "").lower()
-            if tipo not in TIPOS_IMAGEM:
-                raise HTTPException(422, "Formato inválido. Use JPG, PNG, WEBP ou AVIF.")
-            conteudo = await arquivo.read()
-            if not conteudo or len(conteudo) > MAX_TAMANHO_IMAGEM:
-                raise HTTPException(422, "Cada imagem deve ter no máximo 8 MB.")
+            tipo, conteudo = await _ler_imagem_segura(arquivo)
             tamanho_total += len(conteudo)
             if tamanho_total > MAX_TAMANHO_TOTAL_IMAGENS:
                 raise HTTPException(422, "O relatório pode armazenar no máximo 50 MB em imagens.")
             uploads.append((arquivo, tipo, conteudo))
         salvas = []
         for arquivo, tipo, conteudo in uploads:
-            caminho = f"{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
+            caminho = f"{request.state.empresa_id}/{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
             supabase_client.storage.from_(EVIDENCIAS_BUCKET).upload(
                 caminho, conteudo, file_options={"content-type": tipo, "upsert": "false"}
             )
             try:
                 registro = supabase_client.table("relatorio_imagens").insert({
                     "relatorio_id": str(relatorio_id), "caminho": caminho,
-                    "nome_original": os.path.basename(arquivo.filename)[:255],
+                    "nome_original": _nome_original_seguro(arquivo.filename),
                     "tipo": tipo, "tamanho_bytes": len(conteudo),
                     "enviado_por": request.state.user["id"],
+                    **_dados_seguranca_imagem(request, conteudo),
                 }).execute()
                 salvas.append(registro.data[0])
             except Exception:
@@ -1926,10 +1966,12 @@ async def excluir_imagem_relatorio(relatorio_id: UUID, imagem_id: UUID, request:
     if role not in ("gestor", "apoio") and relatorio.get("user_id") != request.state.user.get("id"):
         raise HTTPException(403, "Você só pode alterar imagens dos seus próprios relatórios.")
     try:
-        result = supabase_client.table("relatorio_imagens").select("id,caminho").eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).single().execute()
+        query = supabase_client.table("relatorio_imagens").select("id,caminho").eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id))
+        result = _filtrar_imagem_empresa(query, request).single().execute()
         if not result.data:
             raise HTTPException(404, "Imagem não encontrada.")
-        supabase_client.table("relatorio_imagens").delete().eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).execute()
+        query = supabase_client.table("relatorio_imagens").delete().eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id))
+        _filtrar_imagem_empresa(query, request).execute()
         try:
             supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([result.data["caminho"]])
         except Exception:
@@ -1947,20 +1989,26 @@ async def substituir_imagem_relatorio(relatorio_id: UUID, imagem_id: UUID, reque
     role = role_of(request.state.user)
     if role not in ("gestor", "apoio") and relatorio.get("user_id") != request.state.user.get("id"):
         raise HTTPException(403, "Você só pode alterar imagens dos seus próprios relatórios.")
-    tipo = (arquivo.content_type or "").lower()
-    if tipo not in TIPOS_IMAGEM:
-        raise HTTPException(422, "Formato inválido. Use JPG, PNG, WEBP ou AVIF.")
-    conteudo = await arquivo.read()
-    if not conteudo or len(conteudo) > MAX_TAMANHO_IMAGEM:
-        raise HTTPException(422, "Cada imagem deve ter no máximo 8 MB.")
+    tipo, conteudo = await _ler_imagem_segura(arquivo)
     try:
-        old = supabase_client.table("relatorio_imagens").select("id,caminho").eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).single().execute()
+        query = supabase_client.table("relatorio_imagens").select("id,caminho,tamanho_bytes").eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id))
+        old = _filtrar_imagem_empresa(query, request).single().execute()
         if not old.data:
             raise HTTPException(404, "Imagem não encontrada.")
-        novo_caminho = f"{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
+        total_query = supabase_client.table("relatorio_imagens").select("tamanho_bytes").eq("relatorio_id", str(relatorio_id))
+        atuais = _filtrar_imagem_empresa(total_query, request).execute().data or []
+        tamanho_total = sum(int(item.get("tamanho_bytes") or 0) for item in atuais)
+        if tamanho_total - int(old.data.get("tamanho_bytes") or 0) + len(conteudo) > MAX_TAMANHO_TOTAL_IMAGENS:
+            raise HTTPException(422, "O relatório pode armazenar no máximo 50 MB em imagens.")
+        novo_caminho = f"{request.state.empresa_id}/{relatorio_id}/{uuid4().hex}{TIPOS_IMAGEM[tipo]}"
         supabase_client.storage.from_(EVIDENCIAS_BUCKET).upload(novo_caminho, conteudo, file_options={"content-type": tipo, "upsert": "false"})
         try:
-            supabase_client.table("relatorio_imagens").update({"caminho": novo_caminho, "nome_original": os.path.basename(arquivo.filename or "evidencia")[:255], "tipo": tipo, "tamanho_bytes": len(conteudo), "enviado_por": request.state.user["id"]}).eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id)).execute()
+            update = supabase_client.table("relatorio_imagens").update({
+                "caminho": novo_caminho, "nome_original": _nome_original_seguro(arquivo.filename),
+                "tipo": tipo, "tamanho_bytes": len(conteudo), "enviado_por": request.state.user["id"],
+                **_dados_seguranca_imagem(request, conteudo),
+            }).eq("id", str(imagem_id)).eq("relatorio_id", str(relatorio_id))
+            _filtrar_imagem_empresa(update, request).execute()
         except Exception:
             supabase_client.storage.from_(EVIDENCIAS_BUCKET).remove([novo_caminho])
             raise
@@ -2134,6 +2182,7 @@ async def health_check():
             "status_relatorio": REPORT_STATUS_AVAILABLE,
             "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
             "protecao_api": API_SECURITY_AVAILABLE,
+            "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
         },
     }
 
@@ -2150,6 +2199,7 @@ async def saude_detalhada(request: Request):
             "multiempresa": EMPRESA_TABLE_AVAILABLE,
             "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
             "protecao_api": API_SECURITY_AVAILABLE,
+            "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })
