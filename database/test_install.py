@@ -46,6 +46,26 @@ def run():
             for role in ('anon', 'authenticated'):
                 assert not conn.execute("SELECT has_table_privilege(%s,'public.relatorios','SELECT')", (role,)).fetchone()[0]
                 assert not conn.execute("SELECT has_function_privilege(%s,'public.linkce_criar_empresa(text,text,uuid,text,text)','EXECUTE')", (role,)).fetchone()[0]
+                assert not conn.execute(
+                    "SELECT has_function_privilege(%s,'public.linkce_consumir_limite(text,integer,integer)','EXECUTE')",
+                    (role,),
+                ).fetchone()[0]
+            rate_key = 'a' * 64
+            first = conn.execute(
+                'SELECT permitido, restante FROM public.linkce_consumir_limite(%s, 60, 2)',
+                (rate_key,),
+            ).fetchone()
+            second = conn.execute(
+                'SELECT permitido, restante FROM public.linkce_consumir_limite(%s, 60, 2)',
+                (rate_key,),
+            ).fetchone()
+            third = conn.execute(
+                'SELECT permitido, restante FROM public.linkce_consumir_limite(%s, 60, 2)',
+                (rate_key,),
+            ).fetchone()
+            assert first == (True, 1)
+            assert second == (True, 0)
+            assert third == (False, 0)
             before = conn.execute('SELECT count(*) FROM public.empresas').fetchone()[0]
             try:
                 conn.execute("SELECT * FROM public.linkce_criar_empresa('Sem usuário','falha','22222222-2222-4222-8222-222222222222','cloud','')")

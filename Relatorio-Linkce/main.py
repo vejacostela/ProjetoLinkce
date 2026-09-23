@@ -8,6 +8,7 @@ import logging
 import hashlib
 import secrets
 import base64
+from urllib.parse import urlsplit
 from datetime import date, time, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, UploadFile, File
@@ -27,9 +28,23 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 APP_VERSION = os.getenv("APP_VERSION", "2026.09.23")
 
+def _origens_cors():
+    result = []
+    for raw in os.getenv("ALLOWED_ORIGINS", "").split(","):
+        origin = raw.strip().rstrip("/")
+        if not origin or origin == "*":
+            continue
+        parsed = urlsplit(origin)
+        local = parsed.hostname in ("localhost", "127.0.0.1")
+        if parsed.scheme in (("http", "https") if local else ("https",)) and parsed.hostname and not parsed.path:
+            result.append(origin)
+    return result
+
+CORS_ORIGINS = _origens_cors()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,11 +56,29 @@ async def enforce_access(request, call_next):
     request_id = request.headers.get("X-Request-ID") or uuid4().hex
     request.state.request_id = request_id
     path = request.url.path
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        try:
+            content_length = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            content_length = 0
+        max_body = 55 * 1024 * 1024 if path.endswith("/imagens") else 2 * 1024 * 1024
+        if content_length > max_body:
+            return JSONResponse({"detail": "Conteúdo enviado acima do limite permitido."}, status_code=413,
+                                headers={"X-Request-ID": request_id, "Cache-Control": "no-store"})
+        if not origem_de_escrita_permitida(request):
+            return JSONResponse({"detail": "Origem da solicitação não autorizada."}, status_code=403,
+                                headers={"X-Request-ID": request_id, "Cache-Control": "no-store"})
     if path.startswith("/api/debug/") or path == "/api/materiais/recarregar":
         return JSONResponse({"detail": "Recurso indisponível."}, status_code=404)
     public_reset = path.startswith("/api/seguranca/redefinicao/")
     public_api = path in ("/api/config", "/api/materiais", "/api/auth/login") or public_reset
     protected = path.startswith("/api/") and not public_api
+    if path.startswith("/api/") and not protected:
+        try:
+            aplicar_limite_api(request)
+        except HTTPException as exc:
+            headers = {"X-Request-ID": request_id, "Cache-Control": "no-store", **(exc.headers or {})}
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code, headers=headers)
     if protected or path == "/gerar_relatorio":
         try:
             user = await authenticate(request)
@@ -55,6 +88,7 @@ async def enforce_access(request, call_next):
             requested_empresa = None if path == '/api/empresas' and request.method == 'GET' else request.headers.get("X-Empresa-ID")
             request.state.empresa_id = empresa_id_do_usuario(user, requested_empresa)
             validar_sessao_servidor(request, user)
+            aplicar_limite_api(request, user, request.state.empresa_id)
             role = role_of(user)
             if path.startswith('/api/avisos') and request.method != 'GET' and role not in ('gestor', 'apoio'):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
@@ -83,11 +117,16 @@ async def enforce_access(request, call_next):
             request.state.user = user
         except HTTPException as exc:
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+            for key, value in (exc.headers or {}).items():
+                response.headers[key] = value
             response.headers["X-Request-ID"] = request_id
             response.headers["Cache-Control"] = "no-store"
             return response
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
+    if hasattr(request.state, "rate_limit_remaining"):
+        response.headers["X-RateLimit-Remaining"] = str(request.state.rate_limit_remaining)
+        response.headers["X-RateLimit-Reset"] = str(request.state.rate_limit_reset)
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if response.status_code < 400 and path != '/api/seguranca/redefinir-senha' and (
@@ -319,6 +358,7 @@ NOTICE_TENANT_AVAILABLE = False
 AUDIT_TENANT_AVAILABLE = False
 EMPRESA_TABLE_AVAILABLE = False
 AUTH_SECURITY_AVAILABLE = False
+API_SECURITY_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -434,6 +474,71 @@ def aplicar_empresa_auditoria(query, request=None):
         return query.eq("empresa_id", getattr(getattr(request, "state", None), "empresa_id", DEFAULT_EMPRESA_ID))
     return query
 
+def _request_origin(request: Request) -> str:
+    forwarded_host = request.headers.get("x-forwarded-host", "").split(",")[0].strip()
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",")[0].strip()
+    host = forwarded_host or request.headers.get("host", "")
+    scheme = forwarded_proto or request.url.scheme
+    return f"{scheme}://{host}".rstrip("/") if host else ""
+
+def origem_de_escrita_permitida(request: Request) -> bool:
+    origin = request.headers.get("origin", "").strip().rstrip("/")
+    if not origin:
+        return True
+    allowed = set(CORS_ORIGINS)
+    app_origin = os.getenv("APP_PUBLIC_URL", "").strip().rstrip("/")
+    if app_origin:
+        allowed.add(app_origin)
+    current = _request_origin(request)
+    if current:
+        allowed.add(current)
+    return origin in allowed
+
+def _client_address(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return forwarded or getattr(getattr(request, "client", None), "host", "unknown")
+
+def aplicar_limite_api(request: Request, user: dict = None, empresa_id: str = None):
+    """Consome um limite atômico no banco; não armazena IP, usuário ou empresa em texto."""
+    if not (API_SECURITY_AVAILABLE and supabase_client):
+        return
+    path = request.url.path
+    if path == "/api/auth/login":
+        categoria, limite = "login", 30
+    elif path.startswith("/api/seguranca/redefinicao/"):
+        categoria, limite = "redefinicao_publica", 30
+    elif path.endswith("/imagens") or "/imagens/" in path:
+        categoria, limite = "imagens", 30 if request.method != "GET" else 180
+    elif user and request.method == "GET":
+        categoria, limite = "leitura", 300
+    elif user:
+        categoria, limite = "escrita", 90
+    else:
+        categoria, limite = "publica", 120
+    identity = (f"usuario:{user.get('id')}|empresa:{empresa_id}" if user
+                else f"origem:{_client_address(request)}")
+    salt = os.getenv("API_RATE_LIMIT_SECRET") or SUPABASE_SERVICE_KEY
+    chave = hashlib.sha256(f"{salt}|{categoria}|{identity}".encode()).hexdigest()
+    try:
+        result = supabase_client.rpc("linkce_consumir_limite", {
+            "p_chave_hash": chave, "p_janela_segundos": 60, "p_limite": limite,
+        }).execute()
+        row = (result.data or [None])[0]
+        if not row:
+            raise ValueError("Resultado de limite ausente")
+        reset_at = datetime.fromisoformat(str(row["reinicia_em"]).replace("Z", "+00:00"))
+        request.state.rate_limit_remaining = int(row.get("restante") or 0)
+        request.state.rate_limit_reset = max(1, int(reset_at.timestamp()))
+        if row.get("permitido") is not True:
+            retry = max(1, int((reset_at - datetime.now(timezone.utc)).total_seconds()))
+            raise HTTPException(429, "Muitas solicitações. Aguarde e tente novamente.",
+                                headers={"Retry-After": str(retry)})
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha no controle de requisições da API")
+        raise HTTPException(503, "Proteção da API temporariamente indisponível.")
+
 def _jwt_session_id(request: Request, user: dict) -> str:
     """Extrai a sessão de um token já validado pelo Supabase."""
     token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
@@ -487,8 +592,7 @@ def revogar_sessoes_usuario(usuario_id):
     }).eq("usuario_id", str(usuario_id)).is_("revogada_em", "null").execute()
 
 def _login_key(request: Request, email: str) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    address = forwarded or getattr(getattr(request, "client", None), "host", "unknown")
+    address = _client_address(request)
     salt = os.getenv("AUTH_RATE_LIMIT_SECRET") or SUPABASE_SERVICE_KEY
     return hashlib.sha256(f"{salt}|{email.casefold()}|{address}".encode()).hexdigest()
 
@@ -516,7 +620,8 @@ def registrar_falha_login(chave: str, atual=None):
 
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
-    global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE, AUTH_SECURITY_AVAILABLE
+    global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -530,6 +635,7 @@ def init_supabase():
             ("auditoria_gestao", "empresa_id", "AUDIT_TENANT_AVAILABLE"),
             ("empresas", "id", "EMPRESA_TABLE_AVAILABLE"),
             ("sessoes_ativas", "sessao_id", "AUTH_SECURITY_AVAILABLE"),
+            ("api_rate_limits", "chave_hash", "API_SECURITY_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -904,8 +1010,8 @@ Materiais Recolhidos:
 
     except HTTPException:
         raise
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Formato inválido: {str(e)}")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Formato JSON inválido.")
     except Exception:
         logger.exception("Falha ao salvar relatório no Supabase")
         raise HTTPException(status_code=503, detail="Não foi possível salvar no Supabase. Verifique a conexão; o formulário permanece preservado para tentar novamente.")
@@ -1951,7 +2057,7 @@ async def banco_stats(request: Request):
             resultado["size_bytes"] = resultado["total_rows"] * 3072  # ~3 KB/registro
         except Exception as e2:
             logger.error(f"❌ Erro no fallback banco stats: {e2}")
-            raise HTTPException(status_code=500, detail=str(e2))
+            raise HTTPException(status_code=503, detail="Não foi possível calcular as estatísticas do banco.")
     return JSONResponse(content=resultado)
 
 
@@ -1999,7 +2105,7 @@ async def banco_deletar(request: Request):
         raise
     except Exception as e:
         logger.error(f"❌ Erro ao deletar registros: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=503, detail="Não foi possível excluir os registros solicitados.")
 
 
 @app.get("/health")
@@ -2027,6 +2133,7 @@ async def health_check():
             "filtro_empresa": TENANT_COLUMN_AVAILABLE,
             "status_relatorio": REPORT_STATUS_AVAILABLE,
             "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
+            "protecao_api": API_SECURITY_AVAILABLE,
         },
     }
 
@@ -2042,6 +2149,7 @@ async def saude_detalhada(request: Request):
             "auditoria_por_empresa": AUDIT_TENANT_AVAILABLE,
             "multiempresa": EMPRESA_TABLE_AVAILABLE,
             "seguranca_sessoes": AUTH_SECURITY_AVAILABLE,
+            "protecao_api": API_SECURITY_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })
