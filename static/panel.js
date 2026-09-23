@@ -194,8 +194,10 @@ function ocultarAlertaOperacao() { const alerta = $('operationAlert'); if (alert
 function renderResumoOperacao(data) {
   const total = Number(data?.total) || 0, fotos = Number(data?.com_fotos) || 0, local = Number(data?.com_localizacao) || 0, pendentes = Number(data?.pendentes) || 0;
   $('total').textContent = total; $('summaryPhotos').textContent = fotos; $('summaryLocated').textContent = local; $('summaryPending').textContent = pendentes;
+  $('technicians').textContent = Number(data?.tecnicos) || 0;
   if ($('summaryFailed')) $('summaryFailed').textContent = Number(data?.falhas) || 0;
   if ($('summaryPendingSend')) $('summaryPendingSend').textContent = Number(data?.pendentes_envio) || 0;
+  if ($('summaryCompletion')) $('summaryCompletion').textContent = (Number(data?.taxa_completude) || 0).toLocaleString('pt-BR',{maximumFractionDigits:1}) + '%';
   $('summaryPeriod').textContent = total + ' relatório' + (total === 1 ? '' : 's') + ' no período';
   const list = $('technicianSummary'); list.replaceChildren();
   const items = Array.isArray(data?.por_tecnico) ? data.por_tecnico : [];
@@ -205,7 +207,11 @@ function renderResumoOperacao(data) {
     const name=document.createElement('strong'); name.textContent=item.tecnico || 'Não informado';
     const count=document.createElement('span'); count.textContent=(item.total || 0) + ' relatório' + (Number(item.total) === 1 ? '' : 's') + ' · ' + (item.completos || 0) + ' completo' + (Number(item.completos) === 1 ? '' : 's');
     const pending=document.createElement('span'); pending.className='pending'; pending.textContent=(item.pendentes || 0) + ' pendente' + (Number(item.pendentes) === 1 ? '' : 's');
-    card.append(name,count,pending); list.append(card);
+    const quality=document.createElement('span'); quality.textContent=(item.com_fotos || 0)+' com fotos · '+(item.com_localizacao || 0)+' localizados';
+    const delivery=document.createElement('span'); delivery.className=Number(item.falhas)>0?'failure':'queue'; delivery.textContent=Number(item.falhas)>0?(item.falhas+' falha(s) de envio'):(item.na_fila || 0)+' na fila';
+    const filter=document.createElement('button'); filter.type='button'; filter.className='technician-filter'; filter.textContent='Ver relatórios';
+    filter.addEventListener('click',()=>{$('technician').value=item.tecnico || ''; applyFilters(); window.scrollTo({top:0,behavior:'smooth'});});
+    card.append(name,count,quality,pending,delivery,filter); list.append(card);
   }
   const daily = $('dailySummary'); daily.replaceChildren();
   const dailyItems = Array.isArray(data?.por_dia) ? data.por_dia : [];
@@ -218,6 +224,24 @@ function renderResumoOperacao(data) {
     const count=document.createElement('strong'); count.textContent=String(item.total||0);
     row.append(label,bar,count); daily.append(row);
   }
+  const alerts = Array.isArray(data?.alertas) ? data.alertas : [];
+  const failures = Array.isArray(data?.falhas_recentes) ? data.falhas_recentes : [];
+  const alertPanel=$('operationActionAlerts'), alertList=$('operationAlertsList'), recent=$('recentFailures');
+  alertList.replaceChildren(); recent.replaceChildren();
+  for(const item of alerts){
+    const row=document.createElement('p'); row.className='operation-action '+(item.nivel==='critico'?'critical':'warning'); row.textContent=item.mensagem; alertList.append(row);
+  }
+  if(failures.length){
+    const title=document.createElement('h4'); title.textContent='Falhas recentes'; recent.append(title);
+    for(const item of failures){
+      const row=document.createElement('div'); row.className='failure-row';
+      const text=document.createElement('span'); text.textContent=(item.tecnico || 'Não informado')+' · '+dateLabel(item.criado_em)+' · '+(item.erro || 'Falha de envio');
+      const open=document.createElement('button'); open.type='button'; open.textContent='Abrir'; open.addEventListener('click',()=>openReport(item.id));
+      row.append(text,open); recent.append(row);
+    }
+  }
+  alertPanel.hidden = alerts.length===0 && failures.length===0;
+  if(alerts.length) mostrarAlertaOperacao(alerts.map(item=>item.mensagem).join(' ')); else ocultarAlertaOperacao();
   $('operationSummary').hidden = false;
 }
 async function loadResumoOperacao() {
@@ -225,7 +249,7 @@ async function loadResumoOperacao() {
   try {
     const data = await api('/api/operacao/resumo?' + query);
     if (!currentUser) return;
-    renderResumoOperacao(data); ocultarAlertaOperacao();
+    renderResumoOperacao(data);
   } catch (error) {
     mostrarAlertaOperacao('Falha ao atualizar o resumo no Supabase. Os dados da tabela podem estar desatualizados. ' + error.message);
   }

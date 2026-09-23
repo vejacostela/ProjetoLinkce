@@ -1077,6 +1077,79 @@ Materiais Recolhidos:
 
 # === API RELATÓRIOS ===
 
+def calcular_resumo_operacional(rows, image_counts, *, status_disponivel=True, imagens_disponiveis=True):
+    brasil = timezone(BRASIL_OFFSET)
+    por_tecnico, por_dia, falhas_recentes = {}, {}, []
+    com_fotos = com_localizacao = pendentes = falhas = pendentes_envio = sincronizados = 0
+    for row in rows:
+        rid = row.get("id")
+        fotos = image_counts.get(rid, 0)
+        localizado = (isinstance(row.get("latitude"), (int, float))
+                      and isinstance(row.get("longitude"), (int, float))
+                      and -90 <= row.get("latitude") <= 90 and -180 <= row.get("longitude") <= 180)
+        completo = bool(row.get("equipamento_status") and row.get("maior_sinal")
+                        and localizado and fotos > 0) if imagens_disponiveis else False
+        status_envio = str(row.get("status_envio") or "sincronizado").lower()
+        falhou = status_disponivel and status_envio == "erro"
+        na_fila = status_disponivel and status_envio in ("pendente", "pendente_fotos", "processando")
+        falhas += int(falhou)
+        pendentes_envio += int(na_fila)
+        sincronizados += int(status_disponivel and status_envio == "sincronizado")
+        criado = row.get("criado_em")
+        if criado:
+            try:
+                dia = datetime.fromisoformat(str(criado).replace("Z", "+00:00")).astimezone(brasil).date().isoformat()
+                por_dia[dia] = por_dia.get(dia, 0) + 1
+            except (TypeError, ValueError):
+                pass
+        nome = (row.get("tecnico") or "Não informado").strip() or "Não informado"
+        item = por_tecnico.setdefault(nome, {
+            "tecnico": nome, "total": 0, "completos": 0, "pendentes": 0,
+            "com_fotos": 0, "com_localizacao": 0, "falhas": 0, "na_fila": 0,
+        })
+        item["total"] += 1
+        item["completos"] += int(completo)
+        item["pendentes"] += int(not completo)
+        item["com_fotos"] += int(fotos > 0)
+        item["com_localizacao"] += int(localizado)
+        item["falhas"] += int(falhou)
+        item["na_fila"] += int(na_fila)
+        com_fotos += int(fotos > 0)
+        com_localizacao += int(localizado)
+        pendentes += int(not completo)
+        if falhou and len(falhas_recentes) < 10:
+            falhas_recentes.append({
+                "id": str(rid or ""), "tecnico": nome, "criado_em": criado,
+                "tentativas": int(row.get("tentativas_envio") or 0),
+                "erro": str(row.get("erro_envio") or "Falha de envio ao Supabase.")[:240],
+            })
+    total = len(rows)
+    alertas = []
+    if falhas:
+        alertas.append({"codigo": "falhas_envio", "nivel": "critico", "quantidade": falhas,
+                        "mensagem": f"{falhas} relatório(s) com falha de envio ao Supabase."})
+    if pendentes_envio:
+        alertas.append({"codigo": "fila_envio", "nivel": "aviso", "quantidade": pendentes_envio,
+                        "mensagem": f"{pendentes_envio} relatório(s) aguardando sincronização."})
+    if not status_disponivel:
+        alertas.append({"codigo": "status_indisponivel", "nivel": "aviso", "quantidade": 0,
+                        "mensagem": "Indicadores de envio indisponíveis. Execute a migração de operação."})
+    if not imagens_disponiveis:
+        alertas.append({"codigo": "imagens_indisponiveis", "nivel": "aviso", "quantidade": 0,
+                        "mensagem": "Não foi possível consultar as imagens; os indicadores podem estar incompletos."})
+    return {
+        "total": total, "tecnicos": len(por_tecnico), "com_fotos": com_fotos,
+        "sem_fotos": max(0, total - com_fotos), "com_localizacao": com_localizacao,
+        "sem_localizacao": max(0, total - com_localizacao), "pendentes": pendentes,
+        "falhas": falhas, "pendentes_envio": pendentes_envio, "sincronizados": sincronizados,
+        "taxa_completude": round(((total - pendentes) / total) * 100, 1) if total else 0,
+        "status_disponivel": status_disponivel, "imagens_disponiveis": imagens_disponiveis,
+        "alertas": alertas, "falhas_recentes": falhas_recentes,
+        "por_tecnico": sorted(por_tecnico.values(), key=lambda item: (-item["total"], item["tecnico"].casefold())),
+        "por_dia": [{"dia": dia, "total": quantidade} for dia, quantidade in sorted(por_dia.items())],
+    }
+
+
 @app.get("/api/operacao/resumo")
 async def resumo_operacao(request: Request, inicio: date = None, fim: date = None,
                           tecnico: str = Query(None, max_length=200)):
@@ -1106,51 +1179,24 @@ async def resumo_operacao(request: Request, inicio: date = None, fim: date = Non
             if len(batch) < 1000:
                 break
             start += 1000
-        image_counts = {}
-        for pos in range(0, len(rows), 500):
-            ids = [row.get("id") for row in rows[pos:pos + 500] if row.get("id")]
-            if not ids:
-                continue
-            image_rows = (supabase_client.table("relatorio_imagens")
-                          .select("relatorio_id").in_("relatorio_id", ids).execute().data or [])
-            for image in image_rows:
-                rid = image.get("relatorio_id")
-                image_counts[rid] = image_counts.get(rid, 0) + 1
-        por_tecnico, por_dia = {}, {}
-        com_fotos = com_localizacao = pendentes = falhas = pendentes_envio = sincronizados = 0
-        for row in rows:
-            rid = row.get("id")
-            fotos = image_counts.get(rid, 0)
-            localizado = (isinstance(row.get("latitude"), (int, float))
-                          and isinstance(row.get("longitude"), (int, float))
-                          and -90 <= row.get("latitude") <= 90 and -180 <= row.get("longitude") <= 180)
-            completo = bool(row.get("equipamento_status") and row.get("maior_sinal") and localizado and fotos > 0)
-            status_envio = str(row.get("status_envio") or "sincronizado").lower()
-            falhas += int(status_envio == "erro")
-            pendentes_envio += int(status_envio in ("pendente", "pendente_fotos", "processando"))
-            sincronizados += int(status_envio == "sincronizado")
-            criado = row.get("criado_em")
-            if criado:
-                try:
-                    dia = datetime.fromisoformat(str(criado).replace("Z", "+00:00")).astimezone(brasil).date().isoformat()
-                    por_dia[dia] = por_dia.get(dia, 0) + 1
-                except (TypeError, ValueError):
-                    pass
-            nome = (row.get("tecnico") or "Não informado").strip() or "Não informado"
-            item = por_tecnico.setdefault(nome, {"tecnico": nome, "total": 0, "completos": 0, "pendentes": 0})
-            item["total"] += 1
-            item["completos"] += int(completo)
-            item["pendentes"] += int(not completo)
-            com_fotos += int(fotos > 0)
-            com_localizacao += int(localizado)
-            pendentes += int(not completo)
-        return {
-            "total": len(rows), "com_fotos": com_fotos, "com_localizacao": com_localizacao,
-            "pendentes": pendentes, "falhas": falhas, "pendentes_envio": pendentes_envio,
-            "sincronizados": sincronizados, "status_disponivel": REPORT_STATUS_AVAILABLE,
-            "por_tecnico": sorted(por_tecnico.values(), key=lambda item: (-item["total"], item["tecnico"].casefold())),
-            "por_dia": [{"dia": dia, "total": total} for dia, total in sorted(por_dia.items())]
-        }
+        image_counts, imagens_disponiveis = {}, True
+        try:
+            for pos in range(0, len(rows), 500):
+                ids = [row.get("id") for row in rows[pos:pos + 500] if row.get("id")]
+                if not ids:
+                    continue
+                image_rows = (supabase_client.table("relatorio_imagens")
+                              .select("relatorio_id").in_("relatorio_id", ids).execute().data or [])
+                for image in image_rows:
+                    rid = image.get("relatorio_id")
+                    image_counts[rid] = image_counts.get(rid, 0) + 1
+        except Exception:
+            imagens_disponiveis = False
+            logger.exception("Falha ao consultar imagens no resumo operacional")
+        return calcular_resumo_operacional(
+            rows, image_counts, status_disponivel=REPORT_STATUS_AVAILABLE,
+            imagens_disponiveis=imagens_disponiveis,
+        )
     except HTTPException:
         raise
     except Exception:
