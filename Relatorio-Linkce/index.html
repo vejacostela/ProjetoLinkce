@@ -886,7 +886,7 @@ border-radius: 10px;
 ::-webkit-scrollbar-thumb:hover {
 background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow));
 }
-.evidence-section{padding:16px;border:1px solid rgba(94,234,212,.22);border-radius:12px;background:rgba(15,23,42,.38)}.evidence-actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.evidence-actions button{flex:1;min-width:150px}.evidence-input{display:none}.evidence-preview{display:flex;gap:10px;overflow-x:auto;padding:4px 0;min-height:4px}.evidence-item{position:relative;flex:0 0 96px;height:96px;border-radius:10px;overflow:hidden;border:1px solid var(--border-color);background:#111827}.evidence-item img{width:100%;height:100%;object-fit:cover}.evidence-remove{position:absolute;top:4px;right:4px;width:26px;height:26px;min-height:26px;padding:0;border-radius:50%;background:#172033e8;border-color:#64748b;color:#fff;font-size:18px;line-height:1}.evidence-help{font-size:12px;color:var(--text-secondary);margin:4px 0 0}
+.evidence-section{padding:16px;border:1px solid rgba(94,234,212,.22);border-radius:12px;background:rgba(15,23,42,.38)}.evidence-actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.evidence-actions button{flex:1;min-width:150px}.evidence-input{display:none}.evidence-preview{display:flex;gap:10px;overflow-x:auto;padding:4px 0;min-height:4px}.evidence-item{position:relative;flex:0 0 96px;height:96px;border-radius:10px;overflow:hidden;border:1px solid var(--border-color);background:#111827}.evidence-item img{width:100%;height:100%;object-fit:cover}.evidence-state{position:absolute;left:4px;bottom:4px;right:4px;padding:3px 5px;border-radius:6px;background:rgba(15,23,42,.88);color:#fff;font-size:9px;text-align:center}.evidence-remove{position:absolute;top:4px;right:4px;width:26px;height:26px;min-height:26px;padding:0;border-radius:50%;background:#172033e8;border-color:#64748b;color:#fff;font-size:18px;line-height:1}.evidence-help{font-size:12px;color:var(--text-secondary);margin:4px 0 0}
 </style>
 <link rel="stylesheet" href="/static/technical-minimal.css?v=2">
 <link rel="stylesheet" href="/panel-assets/design-system.css?v=1">
@@ -894,10 +894,10 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 <body class="technical-app">
 
 <!-- BANNER OFFLINE -->
-<div id="offlineBanner" style="display:none;position:fixed;top:0;left:0;width:100%;background:linear-gradient(90deg,#e55a1f,#FF6B35);color:#fff;z-index:10000;padding:10px 16px;font-size:13px;font-weight:500;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">
-  <span>📡 Sem conexão — relatório será salvo e enviado ao voltar online</span>
+<div id="offlineBanner" role="status" aria-live="polite" style="display:none;position:fixed;top:0;left:0;width:100%;background:linear-gradient(90deg,#b54708,#e55a1f);color:#fff;z-index:10000;padding:10px 16px;font-size:13px;font-weight:500;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;box-shadow:0 4px 16px rgba(15,23,42,.22);">
+  <span id="syncMessage">📡 Sem conexão — os dados ficarão salvos neste aparelho</span>
   <span id="badgePendente" style="background:#fff;color:#e55a1f;border-radius:12px;padding:2px 10px;font-weight:700;font-size:12px;display:none"></span>
-  <button id="btnSincronizar" onclick="sincronizarAgora()" style="background:#fff;color:#e55a1f;border:none;border-radius:12px;padding:5px 14px;font-weight:600;cursor:pointer;font-size:12px;">↑ Sincronizar agora</button>
+  <button id="btnSincronizar" onclick="sincronizarAgora(true)" style="background:#fff;color:#9a3412;border:none;border-radius:12px;padding:5px 14px;font-weight:700;cursor:pointer;font-size:12px;">↑ Sincronizar agora</button>
 
 </div>
 <button id="btnInstalar" type="button" hidden style="position:fixed;right:16px;bottom:18px;background:#172033;color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:12px;padding:10px 14px;font-weight:600;cursor:pointer;font-size:13px;z-index:10001;box-shadow:0 5px 20px rgba(0,0,0,.3);">＋ Instalar aplicativo</button>
@@ -1128,11 +1128,12 @@ function renderEvidenceFiles() {
   if (!preview) return;
   preview.replaceChildren();
   evidenceFiles.forEach(function(item, index) {
-    const card = document.createElement('div'); card.className = 'evidence-item';
+    const card = document.createElement('div'); card.className = 'evidence-item'; card.dataset.photoId = item.id;
     const image = document.createElement('img'); image.src = item.url; image.alt = 'Evidência ' + (index + 1);
+    const state = document.createElement('span'); state.className = 'evidence-state'; state.textContent = item.status === 'sincronizando' ? 'Enviando…' : item.status === 'sincronizada' ? 'Enviada' : item.status === 'erro' ? 'Falha no envio' : 'Salva no aparelho';
     const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'evidence-remove'; remove.textContent = '×'; remove.setAttribute('aria-label','Remover foto ' + (index + 1));
     remove.addEventListener('click', function() { URL.revokeObjectURL(item.url); evidenceFiles.splice(index, 1); renderEvidenceFiles(); });
-    card.append(image, remove); preview.append(card);
+    card.append(image, state, remove); preview.append(card);
   });
 }
 
@@ -1153,7 +1154,7 @@ async function addEvidenceFiles(files) {
   for (const file of files) {
     if (!EVIDENCE_TYPES.has(file.type) || file.size > MAX_EVIDENCE_SIZE || file.size === 0) continue;
     if (evidenceFiles.length + accepted.length >= MAX_EVIDENCE_FILES) break;
-    try { const optimized = await otimizarEvidencia(file); accepted.push({file: optimized, url: URL.createObjectURL(optimized)}); }
+    try { const optimized = await otimizarEvidencia(file); accepted.push({id:crypto.randomUUID(), file: optimized, url: URL.createObjectURL(optimized), status:'pronta'}); }
     catch (_) { continue; }
   }
   evidenceFiles.push(...accepted); renderEvidenceFiles();
@@ -1301,11 +1302,13 @@ function mostrarApp(user) {
   document.getElementById('userNome').textContent = '👤 ' + nome;
   document.getElementById('userBadge').textContent =
     role === 'gestor' ? '⚙️ Gestor' : role === 'apoio' ? '🛠️ Apoio' : '🔧 Técnico';
-  aplicarMarcaEmpresa(user);
-  // All authorized profiles may fill reports in the technical area.
-  carregarMateriais();
-  restaurarRascunho();
-  sincronizarAgora();
+  aplicarMarcaEmpresa(user).finally(() => {
+    // O rascunho e a fila só são restaurados depois que a empresa foi definida.
+    carregarMateriais();
+    restaurarRascunho();
+    sincronizarAgora();
+    pedirContagemFila();
+  });
 }
 
 document.getElementById('btnLogin').addEventListener('click', async () => {
@@ -1525,8 +1528,13 @@ updateMaterialList(tipo);
 }
 
 // ── Persistência do rascunho no localStorage ─────────────────────────────────
-const DRAFT_KEY = 'linkce_rascunho';
 let _draftTimer = null;
+
+function chaveRascunho() {
+  const usuario = currentUser?.id || 'anonimo';
+  const empresa = localStorage.getItem('linkce-empresa-id') || currentUser?.app_metadata?.empresa_id || 'sem-empresa';
+  return 'campo_rascunho:' + empresa + ':' + usuario;
+}
 
 function salvarRascunho() {
   clearTimeout(_draftTimer);
@@ -1546,14 +1554,14 @@ function salvarRascunho() {
         materiaisUtilizados: materiaisUtilizados,
         materiaisRecolhidos: materiaisRecolhidos,
       };
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+      localStorage.setItem(chaveRascunho(), JSON.stringify(draft));
     } catch (_) {}
   }, 400);
 }
 
 function restaurarRascunho() {
   try {
-    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    const draft = JSON.parse(localStorage.getItem(chaveRascunho()) || 'null');
     if (!draft) return;
     const set = function(name, val) {
       const el = document.querySelector('[name="' + name + '"]');
@@ -1587,7 +1595,7 @@ function restaurarRascunho() {
 
 function limparRascunho() {
   clearTimeout(_draftTimer);
-  localStorage.removeItem(DRAFT_KEY);
+  localStorage.removeItem(chaveRascunho());
 }
 
 
@@ -1638,6 +1646,7 @@ document.getElementById('btnGaleria').addEventListener('click', () => document.g
 
 let ultimoSnapshot = null;
 let ultimoRelatorio = null;
+let ultimoRelatorioId = null;
 
 // Salva rascunho sempre que qualquer campo do formulário mudar
 form.addEventListener('input',  salvarRascunho);
@@ -1671,8 +1680,16 @@ if (ultimoSnapshot && snapshotAtual === ultimoSnapshot && ultimoRelatorio) {
   if (evidenceFiles.length) {
     btnSubmit.disabled = true;
     try {
-      const fotos = await uploadEvidenceFiles(pending.id);
-      mostrarToastSistema(fotos.salvas + ' foto(s) anexada(s).');
+      if (ultimoRelatorioId) {
+        const guardadas = await salvarFotosNaFilaOffline(pending.id);
+        const vinculadas = guardadas && await vincularFotosAoRelatorio(pending.id, ultimoRelatorioId);
+        if (!vinculadas) throw new Error('Não foi possível preparar as fotos.');
+        sincronizarAgora(true);
+        mostrarToastSistema('Fotos salvas no aparelho e adicionadas à fila de sincronização.');
+      } else {
+        sincronizarAgora(true);
+        mostrarToastSistema('O relatório continua aguardando sincronização.');
+      }
     } catch (err) {
       erroDiv.textContent = 'Relatório já salvo. Fotos pendentes: ' + err.message;
       erroDiv.style.display = 'block';
@@ -1719,6 +1736,7 @@ return response.json();
 if (result.relatorio && (result.salvo === true || result.offline === true)) {
 ultimoSnapshot = snapshotAtual;
 ultimoRelatorio = result.relatorio;
+ultimoRelatorioId = result.offline ? null : (result.id || null);
 textarea.value = result.relatorio;
 container.style.display = "block";
 container.scrollIntoView({ behavior: "smooth" });
@@ -1727,13 +1745,26 @@ if (fotosNaFila) mostrarToastSistema('Relatório e fotos guardados neste celular
 pedirContagemFila();
 } else {
 limparRascunho();
-try {
-  const fotos = await uploadEvidenceFiles(result.id);
-  if (fotos.salvas) mostrarToastSistema(fotos.salvas + ' foto(s) anexada(s) ao relatório.');
-  removerFotosDaFilaOffline(pending.id);
-} catch (fotoErro) {
-  erroDiv.textContent = '⚠️ Relatório salvo, mas as fotos ainda não foram enviadas: ' + fotoErro.message;
-  erroDiv.style.display = 'block';
+if (evidenceFiles.length && fotosNaFila) {
+  const vinculada = await vincularFotosAoRelatorio(pending.id, result.id);
+  if (vinculada) {
+    evidenceFiles.forEach(item => { item.status = 'sincronizando'; });
+    renderEvidenceFiles();
+    mostrarToastSistema('Relatório salvo. As fotos estão sendo sincronizadas.');
+    pedirContagemFila();
+    sincronizarAgora(true);
+  } else {
+    erroDiv.textContent = '⚠️ Relatório salvo, mas não foi possível preparar a sincronização das fotos.';
+    erroDiv.style.display = 'block';
+  }
+} else if (evidenceFiles.length) {
+  try {
+    const fotos = await uploadEvidenceFiles(result.id);
+    if (fotos.salvas) mostrarToastSistema(fotos.salvas + ' foto(s) anexada(s) ao relatório.');
+  } catch (fotoErro) {
+    erroDiv.textContent = '⚠️ Relatório salvo, mas as fotos ainda não foram enviadas: ' + fotoErro.message;
+    erroDiv.style.display = 'block';
+  }
 }
 }
 } else {
@@ -1789,6 +1820,7 @@ container.style.display = "none";
 textarea.value = "";
 ultimoSnapshot = null;
 ultimoRelatorio = null;
+ultimoRelatorioId = null;
 erroDiv.style.display = "none";
 limparRascunho();
 window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1834,7 +1866,25 @@ async function salvarFotosNaFilaOffline(requestId) {
     channel.port1.onmessage = event => { clearTimeout(timer); resolve(event.data?.ok === true); };
     worker.postMessage({
       type:'SALVAR_FOTOS_OFFLINE', requestId,
-      files:evidenceFiles.map(item => ({name:item.file.name,type:item.file.type,blob:item.file}))
+      userId:currentUser?.id || null,
+      empresaId:localStorage.getItem('linkce-empresa-id') || null,
+      files:evidenceFiles.map(item => ({clientPhotoId:item.id,name:item.file.name,type:item.file.type,blob:item.file}))
+    }, [channel.port2]);
+  });
+}
+
+async function vincularFotosAoRelatorio(requestId, relatorioId) {
+  const registration = await navigator.serviceWorker.ready.catch(() => null);
+  const worker = navigator.serviceWorker.controller || registration?.active || registration?.waiting;
+  if (!worker) return false;
+  return new Promise(resolve => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), 5000);
+    channel.port1.onmessage = event => { clearTimeout(timer); resolve(event.data?.ok === true); };
+    worker.postMessage({
+      type:'VINCULAR_RELATORIO', requestId, relatorioId,
+      userId:currentUser?.id || null,
+      empresaId:localStorage.getItem('linkce-empresa-id') || null
     }, [channel.port2]);
   });
 }
@@ -1843,25 +1893,39 @@ function removerFotosDaFilaOffline(requestId) {
 }
 
 // ── Offline / PWA ─────────────────────────────────────────────────────────────
+let estadoFilaOffline = {total:0, failed:0, pending:0, syncing:0};
+
 function atualizarBannerOffline() {
   const banner = document.getElementById('offlineBanner');
+  const message = document.getElementById('syncMessage');
   const online = navigator.onLine;
-  banner.style.display = online ? 'none' : 'flex';
-  document.body.style.paddingTop = online ? '' : '48px';
-  if (online) {
-    sincronizarAgora();
-  } else {
+  const temFila = estadoFilaOffline.total > 0;
+  banner.style.display = (!online || temFila) ? 'flex' : 'none';
+  banner.style.background = online ? 'linear-gradient(90deg,#075985,#0e7490)' : 'linear-gradient(90deg,#b54708,#e55a1f)';
+  message.textContent = !online
+    ? '📡 Sem conexão — os dados ficarão salvos neste aparelho'
+    : estadoFilaOffline.syncing > 0
+      ? '🔄 Sincronizando relatórios e fotos…'
+      : estadoFilaOffline.failed > 0
+        ? '⚠️ Há itens que precisam de uma nova tentativa'
+        : '☁️ Itens salvos no aparelho aguardando sincronização';
+  document.body.style.paddingTop = (!online || temFila) ? '48px' : '';
+  if (!online) {
     pedirContagemFila();
   }
 }
 
 function pedirContagemFila() {
   if (navigator.serviceWorker?.controller) {
-    navigator.serviceWorker.controller.postMessage({ type: 'CONTAR_FILA' });
+    navigator.serviceWorker.controller.postMessage({
+      type: 'CONTAR_FILA',
+      userId: currentUser?.id || null,
+      empresaId: localStorage.getItem('linkce-empresa-id') || null
+    });
   }
 }
 
-async function sincronizarAgora() {
+async function sincronizarAgora(forcar = false) {
   let session;
   try { session = (await sbClient.auth.getSession()).data.session; } catch (_) { return; }
   if (!sessaoLocalValida(session)) {
@@ -1873,18 +1937,18 @@ async function sincronizarAgora() {
     const worker = navigator.serviceWorker.controller || reg.active || reg.waiting;
     worker?.postMessage({ type: 'AUTH_SESSION', token: session.access_token, userId: session.user.id, empresaId: localStorage.getItem('linkce-empresa-id') || null, expiresAt: session.expires_at });
     // Background Sync API: o browser deduplica — não dispara duas vezes
-    if ('sync' in reg) {
+    if ('sync' in reg && !forcar) {
       reg.sync.register('sync-relatorios').catch(() => worker?.postMessage({ type: 'SYNC_NOW' }));
     } else {
       // Fallback para browsers sem Background Sync (Firefox, iOS Safari)
-      worker?.postMessage({ type: 'SYNC_NOW' });
+      worker?.postMessage({ type: 'SYNC_NOW', force:forcar === true });
     }
   });
 }
 
 window.sincronizarAgora = sincronizarAgora;
 
-window.addEventListener('online',  atualizarBannerOffline);
+window.addEventListener('online',  () => { atualizarBannerOffline(); sincronizarAgora(); });
 window.addEventListener('offline', atualizarBannerOffline);
 
 if ('serviceWorker' in navigator) {
@@ -1926,12 +1990,12 @@ if ('serviceWorker' in navigator) {
   });
 
   navigator.serviceWorker.addEventListener('message', e => {
-    const { type, enviados, total, failed, pending } = e.data || {};
+    const { type, enviados, total, failed, pending, syncing } = e.data || {};
 
     if (type === 'SYNC_CONCLUIDO') {
       mostrarToastSistema(`✅ ${enviados} relatório${enviados > 1 ? 's' : ''} sincronizado${enviados > 1 ? 's' : ''} com sucesso!`);
+      clearEvidenceFiles();
       pedirContagemFila();
-      atualizarBannerOffline();
     }
 
     if (type === 'SYNC_ERRO') {
@@ -1951,16 +2015,27 @@ if ('serviceWorker' in navigator) {
     if (type === 'CONTAGEM_FILA') {
       const badge = document.getElementById('badgePendente');
       const totalItens = Number(total) || 0, falhas = Number(failed) || 0;
+      estadoFilaOffline = {total:totalItens, failed:falhas, pending:Number(pending)||0, syncing:Number(syncing)||0};
       if (totalItens > 0) {
-        badge.textContent = falhas ? `${totalItens} na fila · ${falhas} falha${falhas > 1 ? 's' : ''}` : `${totalItens} pendente${totalItens > 1 ? 's' : ''}`;
+        badge.textContent = falhas ? `${totalItens} na fila · ${falhas} falha${falhas > 1 ? 's' : ''}` : estadoFilaOffline.syncing ? `${estadoFilaOffline.syncing} sincronizando` : `${totalItens} pendente${totalItens > 1 ? 's' : ''}`;
         badge.style.display = 'inline-block';
       } else {
         badge.style.display = 'none';
       }
+      atualizarBannerOffline();
     }
 
     if (type === 'PENDENTE_ATUALIZADO') {
       pedirContagemFila();
+    }
+
+    if (type === 'SYNC_PROGRESS') {
+      pedirContagemFila();
+    }
+
+    if (type === 'FOTO_SYNC_STATUS') {
+      const foto = evidenceFiles.find(item => item.id === e.data.fotoId);
+      if (foto) { foto.status = e.data.status; renderEvidenceFiles(); }
     }
   });
 }
@@ -1974,7 +2049,10 @@ window.addEventListener('beforeinstallprompt', event => {
   if (installButton) installButton.hidden = false;
 });
 installButton?.addEventListener('click', async () => {
-  if (!deferredInstallPrompt) return;
+  if (!deferredInstallPrompt) {
+    mostrarToastSistema('No iPhone/iPad: toque em Compartilhar e depois em “Adicionar à Tela de Início”.', 7000);
+    return;
+  }
   deferredInstallPrompt.prompt();
   const choice = await deferredInstallPrompt.userChoice;
   if (choice.outcome === 'accepted') mostrarToastSistema('Aplicativo instalado neste celular.');
@@ -1985,6 +2063,9 @@ window.addEventListener('appinstalled', () => {
   if (installButton) installButton.hidden = true;
   mostrarToastSistema('Aplicativo instalado com sucesso.');
 });
+const emModoAplicativo = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+const dispositivoIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+if (installButton && dispositivoIOS && !emModoAplicativo) installButton.hidden = false;
 
 // Verifica status de conexão ao carregar
 atualizarBannerOffline();

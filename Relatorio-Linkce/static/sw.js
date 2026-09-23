@@ -1,4 +1,5 @@
-const CACHE = 'gestao-campo-v8';
+const CACHE = 'gestao-campo-v9';
+const OFFLINE_DB_VERSION = 4;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
 const SHELL = ['/tecnico', '/panel-assets/design-system.css?v=1', '/static/notices-tech.js?v=2', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
@@ -148,13 +149,21 @@ function gerarRelatorioJS(data) {
 // ── IndexedDB ────────────────────────────────────────────────────────────────
 function abrirDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('linkce-offline', 3);
+    const req = indexedDB.open('linkce-offline', OFFLINE_DB_VERSION);
     req.onupgradeneeded = e => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains('fila')) db.createObjectStore('fila', { keyPath: 'id', autoIncrement: true });
+      const fila = db.objectStoreNames.contains('fila')
+        ? e.target.transaction.objectStore('fila')
+        : db.createObjectStore('fila', { keyPath: 'id', autoIncrement: true });
+      if (!fila.indexNames.contains('user_id')) fila.createIndex('user_id', 'user_id', { unique: false });
+      if (!fila.indexNames.contains('empresa_id')) fila.createIndex('empresa_id', '_empresa_id', { unique: false });
       if (!db.objectStoreNames.contains('fotos')) {
         const fotos = db.createObjectStore('fotos', { keyPath: 'id', autoIncrement: true });
         fotos.createIndex('request_id', 'request_id', { unique: false });
+        fotos.createIndex('client_photo_id', 'client_photo_id', { unique: false });
+      } else {
+        const fotos = e.target.transaction.objectStore('fotos');
+        if (!fotos.indexNames.contains('client_photo_id')) fotos.createIndex('client_photo_id', 'client_photo_id', { unique: false });
       }
     };
     req.onsuccess  = e => resolve(e.target.result);
@@ -201,13 +210,26 @@ async function removerDaFila(id) {
 }
 
 
-async function salvarFotosOffline(requestId, files) {
+async function salvarFotosOffline(requestId, files, scope = {}) {
   if (!files?.length) return;
   const db = await abrirDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction('fotos', 'readwrite');
     const store = tx.objectStore('fotos');
-    files.forEach(file => store.add({request_id: requestId, nome: file.name || 'evidencia.jpg', tipo: file.type || file.blob?.type || 'image/jpeg', blob: file.blob || file}));
+    const existing = store.index('request_id').getAll(requestId);
+    existing.onsuccess = () => {
+      const ids = new Set((existing.result || []).map(item => item.client_photo_id).filter(Boolean));
+      files.forEach((file, index) => {
+        const clientPhotoId = file.clientPhotoId || (requestId + ':' + index);
+        if (ids.has(clientPhotoId)) return;
+        store.add({
+          request_id: requestId, client_photo_id: clientPhotoId,
+          user_id: scope.userId || null, empresa_id: scope.empresaId || null,
+          nome: file.name || 'evidencia.jpg', tipo: file.type || file.blob?.type || 'image/jpeg',
+          blob: file.blob || file, status: 'salva_no_aparelho', tentativas: 0, ultimo_erro: ''
+        });
+      });
+    };
     tx.oncomplete = resolve; tx.onerror = e => reject(e.target.error);
   });
 }
@@ -229,18 +251,49 @@ async function removerFotosOffline(requestId) {
     tx.oncomplete = resolve; tx.onerror = e => reject(e.target.error);
   });
 }
-async function sincronizarFotosOffline(requestId, relatorioId, token) {
+async function removerFotoOffline(id) {
+  const db = await abrirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fotos', 'readwrite');
+    tx.objectStore('fotos').delete(id);
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+  });
+}
+async function atualizarFotoOffline(id, patch) {
+  const db = await abrirDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('fotos', 'readwrite');
+    const store = tx.objectStore('fotos');
+    const req = store.get(id);
+    req.onsuccess = () => { if (req.result) store.put({...req.result, ...patch}); };
+    tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+  });
+}
+async function sincronizarFotosOffline(requestId, relatorioId, token, empresaId) {
   const fotos = await buscarFotosOffline(requestId);
+  let enviadas = 0;
   for (const foto of fotos) {
+    await atualizarFotoOffline(foto.id, {status:'sincronizando', ultimo_erro:''});
+    await notificarClientes({type:'FOTO_SYNC_STATUS', requestId, fotoId:foto.client_photo_id, status:'sincronizando'});
     const payload = new FormData();
     payload.append('arquivos', foto.blob, foto.nome || 'evidencia.jpg');
-    const res = await fetch('/api/relatorios/' + encodeURIComponent(relatorioId) + '/imagens', {
-      method: 'POST', headers: {'X-Sync-Queue':'1', 'Authorization':'Bearer ' + token}, body: payload
-    });
-    if (!res.ok) return false;
+    try {
+      const res = await fetch('/api/relatorios/' + encodeURIComponent(relatorioId) + '/imagens', {
+        method: 'POST',
+        headers: {'X-Sync-Queue':'1', 'Authorization':'Bearer ' + token, ...(empresaId ? {'X-Empresa-ID':empresaId} : {})},
+        body: payload
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      await removerFotoOffline(foto.id);
+      enviadas++;
+      await notificarClientes({type:'FOTO_SYNC_STATUS', requestId, fotoId:foto.client_photo_id, status:'sincronizada'});
+    } catch (error) {
+      await atualizarFotoOffline(foto.id, {status:'erro', tentativas:Number(foto.tentativas || 0) + 1, ultimo_erro:String(error?.message || 'Falha no envio').slice(0, 300)});
+      await notificarClientes({type:'FOTO_SYNC_STATUS', requestId, fotoId:foto.client_photo_id, status:'erro'});
+      return {ok:false, enviadas, pendentes:fotos.length - enviadas};
+    }
   }
-  await removerFotosOffline(requestId);
-  return true;
+  return {ok:true, enviadas, pendentes:0};
 }
 
 // ── Background Sync ───────────────────────────────────────────────────────────
@@ -271,7 +324,27 @@ async function notificarClientes(mensagem) {
   clients.forEach(c => c.postMessage(mensagem));
 }
 
-async function sincronizarFila() {
+function pertenceSessao(item, session = authSession) {
+  if (!session || item.user_id !== session.userId) return false;
+  const empresaItem = item._empresa_id || null;
+  return !empresaItem || !session.empresaId || empresaItem === session.empresaId;
+}
+
+async function vincularRelatorio(requestId, relatorioId, dados = {}) {
+  const fila = await buscarFila();
+  const existente = fila.find(item => item.request_id === requestId);
+  if (existente) {
+    await atualizarFila(existente.id, {_relatorioId:relatorioId, _status:'pendente', _lastError:'Fotos aguardando sincronização.', _nextAttemptAt:0});
+    return existente.id;
+  }
+  return salvarNaFila({
+    request_id:requestId, user_id:dados.userId, _empresa_id:dados.empresaId || null,
+    _relatorioId:relatorioId, _pendente:true, _savedAt:new Date().toISOString(),
+    _tentativas:0, _status:'pendente', _lastError:'Fotos aguardando sincronização.'
+  });
+}
+
+async function sincronizarFila(forcar = false) {
   if (sincronizando || !authSession) return;
   if (!authSession.expiresAt || Number(authSession.expiresAt) <= Math.floor(Date.now() / 1000) + 30) {
     authSession = null;
@@ -283,51 +356,57 @@ async function sincronizarFila() {
     const fila = await buscarFila();
     let enviados = 0, falhas = 0;
     for (const item of fila) {
-      if (item._nextAttemptAt && Date.now() < item._nextAttemptAt) continue;
+      if (!pertenceSessao(item)) continue;
+      if (item._status === 'erro' && !forcar) continue;
+      if (!forcar && item._nextAttemptAt && Date.now() < item._nextAttemptAt) continue;
+      const id = item.id;
+      const tentativa = Number(item._tentativas || 0) + 1;
       try {
-        const { id, _pendente, _savedAt, _tentativas, _status, _lastError, _nextAttemptAt, _empresa_id, ...dados } = item;
-        if (dados.user_id !== authSession.userId) continue;
+        const { id: _id, _pendente, _savedAt, _tentativas, _status, _lastError, _nextAttemptAt, _empresa_id, _relatorioId, ...dados } = item;
         if (!dados.request_id) {
           dados.request_id = crypto.randomUUID();
           await atualizarFila(id, { request_id: dados.request_id });
         }
-        const tentativa = Number(_tentativas || 0) + 1;
         await atualizarFila(id, { _tentativas: tentativa, _status: 'processando', _lastError: '' });
-        const res = await fetch('/gerar_relatorio', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Sync-Queue': '1', 'Authorization': 'Bearer ' + authSession.token, ...( _empresa_id || authSession.empresaId ? { 'X-Empresa-ID': _empresa_id || authSession.empresaId } : {}) },
-          body: JSON.stringify(dados)
-        });
-        const payload = await res.json().catch(() => ({}));
-        if (res.ok && payload.salvo === true) {
-          if (!(await sincronizarFotosOffline(dados.request_id, payload.id || dados.request_id, authSession.token))) {
-            await atualizarFila(id, { _status: 'pendente', _lastError: 'Fotos aguardando envio.' });
-            continue;
+        await notificarClientes({type:'SYNC_PROGRESS', requestId:dados.request_id, status:'sincronizando'});
+        let relatorioId = _relatorioId || null;
+        if (!relatorioId) {
+          const res = await fetch('/gerar_relatorio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Sync-Queue': '1', 'Authorization': 'Bearer ' + authSession.token, ...( _empresa_id || authSession.empresaId ? { 'X-Empresa-ID': _empresa_id || authSession.empresaId } : {}) },
+            body: JSON.stringify(dados)
+          });
+          const payload = await res.json().catch(() => ({}));
+          if (!(res.ok && payload.salvo === true)) {
+            const error = new Error(payload.detail || payload.message || ('HTTP ' + res.status));
+            error.status = res.status;
+            throw error;
           }
+          relatorioId = payload.id || dados.request_id;
+          await atualizarFila(id, {_relatorioId:relatorioId});
+        }
+        const fotos = await sincronizarFotosOffline(dados.request_id, relatorioId, authSession.token, _empresa_id || authSession.empresaId);
+        if (fotos.ok) {
           await removerDaFila(id);
           enviados++;
+          await notificarClientes({type:'SYNC_PROGRESS', requestId:dados.request_id, status:'sincronizado'});
           continue;
+        } else {
+            await atualizarFila(id, { _status: 'pendente', _lastError: 'Fotos aguardando envio.' });
+            falhas++;
+            continue;
         }
-        const retryable = RETRYABLE_STATUS.has(res.status);
-        const erro = payload.detail || payload.message || ('HTTP ' + res.status);
+      } catch (error) {
+        const statusHttp = Number(error?.status || 0);
+        const retryable = !statusHttp || RETRYABLE_STATUS.has(statusHttp);
+        const erro = error?.message || 'Falha de rede';
         const status = retryable && tentativa < MAX_QUEUE_ATTEMPTS ? 'pendente' : 'erro';
         const delay = Math.min(15 * 60 * 1000, 2000 * Math.pow(2, Math.min(tentativa - 1, 8)));
         await atualizarFila(id, {
           _tentativas: tentativa, _status: status, _lastError: String(erro).slice(0, 500),
           _nextAttemptAt: status === 'pendente' ? Date.now() + delay : 0
         });
-        falhas++;
-      } catch (error) {
-        const tentativa = Number(item._tentativas || 0) + 1;
-        const status = tentativa < MAX_QUEUE_ATTEMPTS ? 'pendente' : 'erro';
-        const delay = Math.min(15 * 60 * 1000, 2000 * Math.pow(2, Math.min(tentativa - 1, 8)));
-        try {
-          await atualizarFila(item.id, {
-            _tentativas: tentativa, _status: status,
-            _lastError: String(error?.message || 'Falha de rede').slice(0, 500),
-            _nextAttemptAt: status === 'pendente' ? Date.now() + delay : 0
-          });
-        } catch (_) {}
+        await notificarClientes({type:'SYNC_PROGRESS', requestId:item.request_id, status:'erro'});
         falhas++;
       }
     }
@@ -355,19 +434,25 @@ self.addEventListener('message', e => {
   }
   if (e.data?.type === 'CLEAR_SESSION') authSession = null;
   if (e.data?.type === 'SALVAR_FOTOS_OFFLINE') {
-    e.waitUntil(salvarFotosOffline(e.data.requestId, e.data.files || []).then(() => e.ports?.[0]?.postMessage({ok:true})).catch(() => e.ports?.[0]?.postMessage({ok:false})));
+    e.waitUntil(salvarFotosOffline(e.data.requestId, e.data.files || [], {userId:e.data.userId, empresaId:e.data.empresaId}).then(() => e.ports?.[0]?.postMessage({ok:true})).catch(() => e.ports?.[0]?.postMessage({ok:false})));
+  }
+  if (e.data?.type === 'VINCULAR_RELATORIO') {
+    e.waitUntil(vincularRelatorio(e.data.requestId, e.data.relatorioId, {userId:e.data.userId, empresaId:e.data.empresaId}).then(() => e.ports?.[0]?.postMessage({ok:true})).catch(() => e.ports?.[0]?.postMessage({ok:false})));
   }
   if (e.data?.type === 'REMOVER_FOTOS_OFFLINE') {
     e.waitUntil(removerFotosOffline(e.data.requestId).catch(() => {}));
   }
   if (e.data?.type === 'SYNC_NOW') {
-    e.waitUntil(sincronizarFila());
+    e.waitUntil(sincronizarFila(e.data.force === true));
   }
   if (e.data?.type === 'CONTAR_FILA') {
     buscarFila().then(fila => {
-      const failed = fila.filter(item => item._status === 'erro').length;
-      const pending = fila.length - failed;
-      const resposta = { type: 'CONTAGEM_FILA', total: fila.length, failed, pending };
+      const scope = {userId:e.data.userId || authSession?.userId, empresaId:e.data.empresaId || authSession?.empresaId};
+      const visiveis = scope.userId ? fila.filter(item => pertenceSessao(item, scope)) : [];
+      const failed = visiveis.filter(item => item._status === 'erro').length;
+      const syncing = visiveis.filter(item => item._status === 'processando').length;
+      const pending = visiveis.length - failed - syncing;
+      const resposta = { type: 'CONTAGEM_FILA', total: visiveis.length, failed, pending, syncing };
       e.ports?.[0]?.postMessage(resposta);
       e.source?.postMessage(resposta);
     });
