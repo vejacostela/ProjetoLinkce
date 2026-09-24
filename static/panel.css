@@ -54,3 +54,8 @@
 .reset-link-box{margin:22px 0;padding:16px;border:1px solid var(--border,#38405b);border-radius:12px;background:rgba(9,14,33,.35)}
 .reset-link-box h3{margin:0 0 6px}.copy-result{display:flex;gap:8px;margin-top:10px}.copy-result input{min-width:0;flex:1}
 @media(max-width:620px){.copy-result{flex-direction:column}.reset-link-box .inline-filters{display:grid;grid-template-columns:1fr}}
+
+/* Auditoria pesquisável */
+.audit-filters{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px!important;align-items:end}.audit-filter-actions{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.audit-filter-actions button{min-height:38px;padding:7px 12px;font-size:13px}.audit-table table{min-width:1080px}.audit-table td{max-width:240px;overflow-wrap:anywhere}.audit-table tr[data-result="sucesso"] td:nth-child(6){color:var(--green);font-weight:700}.audit-table tr[data-result="erro"] td:nth-child(6),.audit-table tr[data-result="negado"] td:nth-child(6){color:#ff7a86;font-weight:700}#auditStatus{min-height:21px;color:var(--accent);font-size:13px}#managementAudit .pagination{align-items:center;padding-inline:0}
+@media(max-width:760px){.audit-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.audit-filter-actions button{flex:1 1 calc(33.333% - 8px)}}
+@media(max-width:520px){.audit-filters{grid-template-columns:1fr}.audit-filter-actions{display:grid;grid-template-columns:1fr}.audit-filter-actions button{width:100%}}

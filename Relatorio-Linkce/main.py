@@ -106,7 +106,7 @@ async def enforce_access(request, call_next):
                 raise HTTPException(403, "Acesso exclusivo da administração da plataforma.")
             if path.startswith("/api/backup") and role != "gestor":
                 raise HTTPException(403, "Acesso exclusivo do gestor.")
-            if path == "/api/seguranca/auditoria" and request.method == "GET":
+            if path.startswith("/api/seguranca/auditoria") and request.method == "GET":
                 if role not in ("gestor", "apoio"):
                     raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
             elif path == "/api/criar-usuario" or path.startswith("/api/banco/") or path.startswith("/api/seguranca/"):
@@ -117,7 +117,7 @@ async def enforce_access(request, call_next):
                 raise HTTPException(403, "Acesso não autorizado.")
         except HTTPException as exc:
             if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/')) and hasattr(request.state, 'user'):
-                registrar_auditoria(request, f'{request.method} {path}', 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
+                registrar_auditoria(request, None, 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             for key, value in (exc.headers or {}).items():
                 response.headers[key] = value
@@ -131,12 +131,12 @@ async def enforce_access(request, call_next):
         response.headers["X-RateLimit-Reset"] = str(request.state.rate_limit_reset)
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
-    if path != '/api/seguranca/redefinir-senha' and (
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and (
         path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso')) or
-        (path.startswith('/api/relatorios/') and path.endswith('/imagens') and request.method in ('POST','PUT','DELETE'))
+        (path.startswith('/api/relatorios/') and '/imagens' in path and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
         resultado = 'sucesso' if response.status_code < 400 else ('negado' if response.status_code < 500 else 'erro')
-        registrar_auditoria(request, f'{request.method} {path}', resultado, response.status_code)
+        registrar_auditoria(request, None, resultado, response.status_code)
     return response
 
 # === WHATSAPP ===
@@ -185,13 +185,54 @@ def registrar_historico_aviso(request: Request, acao: str, *, modelo_id=None,
         logger.warning('Histórico de avisos indisponível: %s', exc)
 
 
-def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso', status_code: int = None):
+def classificar_auditoria(request: Request):
+    path, method = request.url.path, request.method.upper()
+    segments = [part for part in path.split('/') if part]
+    categoria, entidade, verbo = 'gestao', 'configuracao', {'POST':'criar', 'PUT':'alterar', 'PATCH':'alterar', 'DELETE':'excluir'}.get(method, 'consultar')
+    if path.startswith('/api/avisos'):
+        categoria, entidade = 'comunicacao', 'aviso'
+        verbo = 'publicar' if path == '/api/avisos' and method == 'POST' else verbo
+        if '/modelos' in path: entidade = 'modelo_aviso'
+    elif path.startswith('/api/empresas'):
+        categoria, entidade = 'empresas', 'empresa'
+        if path.endswith('/convite'): verbo, entidade = 'enviar_convite', 'convite_empresa'
+        elif path.endswith('/acesso'): verbo = 'alterar_acesso'
+    elif path == '/api/criar-usuario':
+        categoria, entidade, verbo = 'usuarios', 'usuario', 'criar'
+    elif path.startswith('/api/seguranca'):
+        categoria, entidade = 'seguranca', 'credencial'
+        if 'redefinir-senha' in path: verbo = 'redefinir_senha'
+        elif 'gerar-link' in path: verbo = 'gerar_link_redefinicao'
+    elif path.startswith('/api/banco'):
+        categoria, entidade = 'dados', 'relatorio'
+        if method == 'DELETE' or 'limpeza' in path: verbo = 'excluir_em_lote'
+    elif path.startswith('/api/backup'):
+        categoria, entidade, verbo = 'dados', 'backup', 'gerar'
+    elif path.startswith('/api/relatorios'):
+        categoria, entidade = 'relatorios', 'imagem' if '/imagens' in path else 'relatorio'
+        if path.endswith('/reprocessar'): verbo = 'reprocessar'
+        elif entidade == 'imagem': verbo = {'POST':'adicionar', 'PUT':'substituir', 'DELETE':'excluir'}.get(method, verbo)
+    entidade_id = None
+    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','relatorios','imagens','reprocessar','limpeza'}
+    for part in reversed(segments):
+        if part not in ignored and (re.fullmatch(r'[0-9a-fA-F-]{16,64}', part) or part.isdigit()):
+            entidade_id = part[:120]
+            break
+    return {
+        'acao': f'{verbo}_{entidade}'[:120], 'categoria': categoria,
+        'entidade_tipo': entidade, 'entidade_id': entidade_id,
+        'descricao': f'{verbo.replace("_", " ").capitalize()} {entidade.replace("_", " ")}'[:300],
+    }
+
+
+def registrar_auditoria(request: Request, acao: str = None, resultado: str = 'sucesso', status_code: int = None):
     if not supabase_client:
         return
     user = getattr(request.state, 'user', {}) or {}
     try:
+        classificacao = classificar_auditoria(request)
         payload = {
-            'acao': acao[:120], 'metodo': request.method, 'rota': request.url.path[:300],
+            'acao': (acao or classificacao['acao'])[:120], 'metodo': request.method, 'rota': request.url.path[:300],
             'resultado': resultado[:40], 'usuario_id': user.get('id'),
             'usuario_email': user.get('email', '')[:254],
         }
@@ -205,6 +246,8 @@ def registrar_auditoria(request: Request, acao: str, resultado: str = 'sucesso',
                 'ip_hash': hashlib.sha256(f'{salt}|ip|{address}'.encode()).hexdigest(),
                 'user_agent_hash': hashlib.sha256(f'{salt}|ua|{agent}'.encode()).hexdigest(),
             })
+        if AUDIT_DETAIL_AVAILABLE:
+            payload.update({key: classificacao[key] for key in ('categoria','entidade_tipo','entidade_id','descricao')})
         if AUDIT_TENANT_AVAILABLE:
             payload['empresa_id'] = getattr(request.state, 'empresa_id', DEFAULT_EMPRESA_ID)
         supabase_client.table('auditoria_gestao').insert(payload).execute()
@@ -374,6 +417,7 @@ AUTH_SECURITY_AVAILABLE = False
 API_SECURITY_AVAILABLE = False
 IMAGE_SECURITY_AVAILABLE = False
 AUDIT_SECURITY_AVAILABLE = False
+AUDIT_DETAIL_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -636,7 +680,7 @@ def registrar_falha_login(chave: str, atual=None):
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
     global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
-    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -653,6 +697,7 @@ def init_supabase():
             ("api_rate_limits", "chave_hash", "API_SECURITY_AVAILABLE"),
             ("relatorio_imagens", "empresa_id,sha256", "IMAGE_SECURITY_AVAILABLE"),
             ("auditoria_gestao", "request_id,status_code,ip_hash,user_agent_hash", "AUDIT_SECURITY_AVAILABLE"),
+            ("auditoria_gestao", "categoria,entidade_tipo,entidade_id,descricao", "AUDIT_DETAIL_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -1801,15 +1846,24 @@ async def consultar_auditoria(
     usuario_email: str = Query(None, max_length=254),
     acao: str = Query(None, max_length=120),
     resultado: str = Query(None, max_length=40),
+    categoria: str = Query(None, max_length=40),
+    entidade_tipo: str = Query(None, max_length=60),
+    entidade_id: str = Query(None, max_length=120),
+    rota: str = Query(None, max_length=300),
+    request_id: str = Query(None, max_length=64),
     inicio: date = None,
     fim: date = None,
 ):
+    if inicio and fim and inicio > fim:
+        raise HTTPException(422, "A data inicial deve ser anterior ou igual à final.")
     if not supabase_client:
         raise HTTPException(503, "Banco de dados não configurado.")
     try:
         fields = "id,acao,metodo,rota,resultado,usuario_email,usuario_id,empresa_id,criado_em"
         if AUDIT_SECURITY_AVAILABLE:
             fields += ",request_id,status_code"
+        if AUDIT_DETAIL_AVAILABLE:
+            fields += ",categoria,entidade_tipo,entidade_id,descricao"
         query = supabase_client.table("auditoria_gestao").select(fields, count="exact")
         query = aplicar_empresa_auditoria(query, request)
         if usuario_email:
@@ -1818,6 +1872,16 @@ async def consultar_auditoria(
             query = query.ilike("acao", f"%{acao.strip()}%")
         if resultado:
             query = query.eq("resultado", resultado.strip())
+        if AUDIT_DETAIL_AVAILABLE and categoria:
+            query = query.eq("categoria", categoria.strip().lower())
+        if AUDIT_DETAIL_AVAILABLE and entidade_tipo:
+            query = query.eq("entidade_tipo", entidade_tipo.strip().lower())
+        if AUDIT_DETAIL_AVAILABLE and entidade_id:
+            query = query.eq("entidade_id", entidade_id.strip())
+        if rota:
+            query = query.ilike("rota", f"%{rota.strip()}%")
+        if AUDIT_SECURITY_AVAILABLE and request_id:
+            query = query.eq("request_id", request_id.strip())
         brasil = timezone(BRASIL_OFFSET)
         if inicio:
             query = query.gte("criado_em", datetime.combine(inicio, time.min, tzinfo=brasil).isoformat())
@@ -2247,6 +2311,7 @@ async def health_check():
             "protecao_api": API_SECURITY_AVAILABLE,
             "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
             "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
+            "auditoria_detalhada": AUDIT_DETAIL_AVAILABLE,
         },
     }
 

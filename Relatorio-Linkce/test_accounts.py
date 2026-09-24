@@ -86,7 +86,10 @@ class PasswordResetTests(unittest.TestCase):
             response = self.client.post("/api/seguranca/redefinir-senha", json={"email":"TECNICO@linkce.test", "senha":password, "motivo":"Solicitação"})
             self.assertEqual(response.status_code, 200)
             admin_api.update_user_by_id.assert_called_once_with("target-id", {"password": password})
-            saved = audit.insert.call_args.args[0]
+            saved = next(
+                call.args[0] for call in audit.insert.call_args_list
+                if call.args and call.args[0].get("usuario_email") == "tecnico@linkce.test"
+            )
             self.assertEqual(saved["usuario_email"], "tecnico@linkce.test")
             self.assertEqual(saved["gestor_email"], "gestor@linkce.test")
             self.assertNotIn("senha", saved)

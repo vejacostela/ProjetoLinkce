@@ -5,6 +5,8 @@ let healthTimer = null;
 let currentReports = [];
 let activeFilters = {}, reportText = '';
 const PAGE_SIZE = 50;
+const AUDIT_PAGE_SIZE = 100;
+let auditOffset = 0, auditRows = [];
 const dateFormat = new Intl.DateTimeFormat('pt-BR', {dateStyle:'short', timeStyle:'short', timeZone:'America/Sao_Paulo'});
 const dateLabel = value => { const d = new Date(value); return Number.isNaN(d.getTime()) ? 'Data indisponível' : dateFormat.format(d); };
 const hasLocation = r => typeof r.latitude === 'number' && typeof r.longitude === 'number' && Number.isFinite(r.latitude) && Number.isFinite(r.longitude) && Math.abs(r.latitude) <= 90 && Math.abs(r.longitude) <= 180;
@@ -397,28 +399,69 @@ async function abrirSaudeDetalhada() {
     body.textContent = 'Não foi possível consultar a saúde do sistema.';
   }
 }
+function auditParams({offsetValue = auditOffset, limit = AUDIT_PAGE_SIZE} = {}) {
+  const params = new URLSearchParams({limite:String(limit), offset:String(offsetValue)});
+  const fields = [
+    ['auditStart','inicio'], ['auditEnd','fim'], ['auditUser','usuario_email'],
+    ['auditCategory','categoria'], ['auditAction','acao'], ['auditEntity','entidade_tipo'],
+    ['auditResult','resultado'], ['auditRoute','rota'], ['auditRequestId','request_id']
+  ];
+  for (const [id, key] of fields) {
+    const value = $(id)?.value?.trim();
+    if (value) params.set(key, value);
+  }
+  return params;
+}
+function auditEntityLabel(item) {
+  if (item.entidade_tipo && item.entidade_id) return `${item.entidade_tipo} · ${item.entidade_id}`;
+  return item.entidade_tipo || item.entidade_id || '—';
+}
 async function loadAudit() {
   const body = $('auditHistory');
   if (!body) return;
-  const params = new URLSearchParams({limite:'100'});
-  if ($('auditUser')?.value.trim()) params.set('usuario_email', $('auditUser').value.trim());
-  if ($('auditAction')?.value.trim()) params.set('acao', $('auditAction').value.trim());
-  if ($('auditResult')?.value) params.set('resultado', $('auditResult').value);
+  if ($('auditStart').value && $('auditEnd').value && $('auditStart').value > $('auditEnd').value) {
+    $('auditStatus').textContent = 'A data inicial deve ser anterior ou igual à final.';
+    return;
+  }
+  $('auditStatus').textContent = 'Consultando auditoria...';
   try {
-    const data = await api('/api/seguranca/auditoria?' + params);
+    const data = await api('/api/seguranca/auditoria?' + auditParams());
     const rows = Array.isArray(data.auditoria) ? data.auditoria : [];
+    auditRows = rows;
     const fragment = document.createDocumentFragment();
     for (const item of rows) {
       const tr = document.createElement('tr');
-      for (const value of [dateLabel(item.criado_em), item.acao, item.rota, item.resultado]) cell(tr, value || '—');
+      for (const value of [dateLabel(item.criado_em), item.usuario_email, item.categoria || 'gestao', item.acao, auditEntityLabel(item), item.resultado, item.status_code, item.request_id]) cell(tr, value || '—');
+      tr.dataset.result = item.resultado || '';
       fragment.append(tr);
     }
     body.replaceChildren(fragment);
     if ($('auditHistoryEmpty')) $('auditHistoryEmpty').hidden = rows.length !== 0;
+    $('auditPrevious').disabled = auditOffset === 0;
+    $('auditNext').disabled = rows.length < AUDIT_PAGE_SIZE;
+    const first = rows.length ? auditOffset + 1 : 0;
+    $('auditPageLabel').textContent = `${first}–${auditOffset + rows.length}`;
+    $('auditStatus').textContent = rows.length ? `${rows.length} evento(s) carregado(s).` : 'Nenhum evento corresponde aos filtros.';
   } catch (error) {
+    auditRows = [];
     body.replaceChildren();
-    if ($('auditHistoryEmpty')) { $('auditHistoryEmpty').hidden = false; $('auditHistoryEmpty').textContent = error.message; }
+    if ($('auditHistoryEmpty')) { $('auditHistoryEmpty').hidden = false; $('auditHistoryEmpty').textContent = 'Não foi possível carregar a auditoria.'; }
+    $('auditStatus').textContent = error.message;
   }
+}
+async function exportAudit() {
+  const button = $('auditExport'); button.disabled = true; $('auditStatus').textContent = 'Preparando arquivo...';
+  try {
+    const data = await api('/api/seguranca/auditoria?' + auditParams({offsetValue:0, limit:500}));
+    const rows = Array.isArray(data.auditoria) ? data.auditoria : auditRows;
+    if (!rows.length) throw new Error('Nenhum evento disponível para exportar.');
+    const columns = ['Data','Responsável','Categoria','Ação','Entidade','ID da entidade','Rota','Resultado','HTTP','ID da requisição'];
+    const lines = [columns.map(csvValue).join(';'), ...rows.map(item => [item.criado_em,item.usuario_email,item.categoria || 'gestao',item.acao,item.entidade_tipo,item.entidade_id,item.rota,item.resultado,item.status_code,item.request_id].map(csvValue).join(';'))];
+    const blob = new Blob(['\ufeff' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+    const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `auditoria-${new Date().toISOString().slice(0,10)}.csv`; link.click(); URL.revokeObjectURL(link.href);
+    $('auditStatus').textContent = `${rows.length} evento(s) exportado(s).`;
+  } catch (error) { $('auditStatus').textContent = error.message; }
+  finally { button.disabled = false; }
 }
 async function enter(user) {
   await loadEmpresas();
@@ -429,7 +472,10 @@ async function enter(user) {
   currentUser = {...user, app_metadata:{...user.app_metadata, role, platform_admin: Boolean(permissions.admin_plataforma)}}; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('managementButton').hidden = false;
   document.querySelectorAll('[data-management-target]').forEach(b => {
-    b.hidden = role !== 'gestor' || (b.dataset.managementTarget === 'companies' && !permissions.gerenciar_empresas);
+    const target = b.dataset.managementTarget;
+    b.hidden = target === 'audit'
+      ? !['gestor','apoio'].includes(role)
+      : role !== 'gestor' || (target === 'companies' && !permissions.gerenciar_empresas);
   });
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
@@ -525,7 +571,11 @@ $('exportCsv').addEventListener('click', exportReports);
 $('exportFullCsv')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=csv', 'relatorios-campo.csv'));
 $('downloadBackup')?.addEventListener('click', () => baixarArquivoAutenticado('/api/backup?formato=zip&incluir_imagens=true', 'backup-campo.zip'));
 $('healthDetails')?.addEventListener('click', abrirSaudeDetalhada);
-$('auditFilters')?.addEventListener('submit', event => { event.preventDefault(); loadAudit(); });
+$('auditFilters')?.addEventListener('submit', event => { event.preventDefault(); auditOffset = 0; loadAudit(); });
+$('auditClear')?.addEventListener('click', () => { $('auditFilters').reset(); auditOffset = 0; loadAudit(); });
+$('auditPrevious')?.addEventListener('click', () => { auditOffset = Math.max(0, auditOffset - AUDIT_PAGE_SIZE); loadAudit(); });
+$('auditNext')?.addEventListener('click', () => { auditOffset += AUDIT_PAGE_SIZE; loadAudit(); });
+$('auditExport')?.addEventListener('click', exportAudit);
 $('companyForm')?.addEventListener('submit', async event => {
   event.preventDefault();
   if (!currentUser?.app_metadata?.platform_admin) return;
@@ -543,7 +593,7 @@ $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
 function showManagement(section = '') {
   document.getElementById('noticePanel')?.setAttribute('hidden','');
-  const sections = {user:'managementUser', password:'managementPassword', bank:'managementBank', companies:'managementCompanies'};
+  const sections = {user:'managementUser', password:'managementPassword', audit:'managementAudit', bank:'managementBank', companies:'managementCompanies'};
   $('managementHome').hidden = Boolean(section);
   Object.values(sections).forEach(id => $(id).hidden = sections[section] !== id);
 }
@@ -557,6 +607,7 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   showManagement(target);
   if(target === 'user') $('userStatus').textContent='';
   if(target === 'password') { $('passwordManagerForm').reset(); $('resetLinkForm')?.reset(); $('resetLinkResult').hidden=true; $('passwordStatus').textContent=''; await loadPasswordHistory(); }
+  if(target === 'audit') { auditOffset = 0; $('auditStatus').textContent=''; await loadAudit(); }
   if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; await loadBankStats(); }
   if(target === 'companies') { $('companyStatus').textContent=''; await loadEmpresas(); }
 }));
@@ -566,7 +617,6 @@ async function loadPasswordHistory() {
   const userId = currentUser?.id; $('passwordHistory').replaceChildren(); $('passwordHistoryEmpty').hidden = true;
   try {
     const data = await api('/api/seguranca/historico-senhas?limite=30');
-    const auditData = await api('/api/seguranca/auditoria?limite=100');
     const scope=$('resetLinkCompany');
     if(scope && currentUser?.app_metadata?.platform_admin) {
       $('resetLinkCompanyLabel').hidden=false;
@@ -579,9 +629,6 @@ async function loadPasswordHistory() {
     const fragment = document.createDocumentFragment();
     for(const item of data.historico) { const tr=document.createElement('tr'); for(const value of [dateLabel(item.criado_em),item.gestor_email,item.usuario_email,item.motivo || '—']) cell(tr,value || '—'); fragment.append(tr); }
     $('passwordHistory').append(fragment); $('passwordHistoryEmpty').hidden = data.historico.length !== 0;
-    const auditFragment = document.createDocumentFragment();
-    for(const item of (auditData.auditoria || [])) { const tr=document.createElement('tr'); for(const value of [dateLabel(item.criado_em),item.acao,item.rota,item.resultado]) cell(tr,value || '—'); auditFragment.append(tr); }
-    $('auditHistory').replaceChildren(auditFragment); $('auditHistoryEmpty').hidden = (auditData.auditoria || []).length !== 0;
   } catch(error) { if(userId === currentUser?.id) $('passwordStatus').textContent = error.message; }
 }
 $('passwordManagerForm').addEventListener('submit',async event=>{

@@ -749,5 +749,57 @@ $linkce_migration$;
     INSERT INTO public.linkce_schema_migrations(versao, checksum) VALUES ('013_auditoria_seguranca.sql', '8026df91232e955dbe28ff4ed2aa99495632181ef96b0c68bffb3fab4fe36cec');
   END IF;
 END $linkce_step$;
+
+-- 014_auditoria_detalhada.sql
+DO $linkce_step$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.linkce_schema_migrations
+             WHERE versao = '014_auditoria_detalhada.sql' AND checksum <> '870eb8303b4962ce2b4c0994b76c392613052070d7d8f3dfbf5a590ab64fc693') THEN
+    RAISE EXCEPTION 'Migração já aplicada foi alterada: 014_auditoria_detalhada.sql';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.linkce_schema_migrations WHERE versao = '014_auditoria_detalhada.sql') THEN
+    EXECUTE $linkce_migration$-- Auditoria pesquisável por categoria e entidade, sem armazenar conteúdo sensível.
+ALTER TABLE public.auditoria_gestao
+  ADD COLUMN IF NOT EXISTS categoria text NOT NULL DEFAULT 'gestao',
+  ADD COLUMN IF NOT EXISTS entidade_tipo text,
+  ADD COLUMN IF NOT EXISTS entidade_id text,
+  ADD COLUMN IF NOT EXISTS descricao text;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'auditoria_categoria_check') THEN
+    ALTER TABLE public.auditoria_gestao
+      ADD CONSTRAINT auditoria_categoria_check
+      CHECK (categoria ~ '^[a-z0-9_]{2,40}$');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'auditoria_entidade_tipo_check') THEN
+    ALTER TABLE public.auditoria_gestao
+      ADD CONSTRAINT auditoria_entidade_tipo_check
+      CHECK (entidade_tipo IS NULL OR entidade_tipo ~ '^[a-z0-9_]{2,60}$');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'auditoria_entidade_id_check') THEN
+    ALTER TABLE public.auditoria_gestao
+      ADD CONSTRAINT auditoria_entidade_id_check
+      CHECK (entidade_id IS NULL OR length(entidade_id) BETWEEN 1 AND 120);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'auditoria_descricao_check') THEN
+    ALTER TABLE public.auditoria_gestao
+      ADD CONSTRAINT auditoria_descricao_check
+      CHECK (descricao IS NULL OR length(descricao) <= 300);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS auditoria_empresa_categoria_criado_idx
+  ON public.auditoria_gestao(empresa_id, categoria, criado_em DESC);
+CREATE INDEX IF NOT EXISTS auditoria_empresa_entidade_idx
+  ON public.auditoria_gestao(empresa_id, entidade_tipo, entidade_id, criado_em DESC)
+  WHERE entidade_tipo IS NOT NULL;
+
+REVOKE ALL ON public.auditoria_gestao FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT ON public.auditoria_gestao TO service_role;
+$linkce_migration$;
+    INSERT INTO public.linkce_schema_migrations(versao, checksum) VALUES ('014_auditoria_detalhada.sql', '870eb8303b4962ce2b4c0994b76c392613052070d7d8f3dfbf5a590ab64fc693');
+  END IF;
+END $linkce_step$;
 COMMIT;
 SELECT versao, aplicado_em FROM public.linkce_schema_migrations ORDER BY versao;
