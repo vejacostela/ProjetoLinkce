@@ -26,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-APP_VERSION = os.getenv("APP_VERSION", "2026.09.23")
+APP_VERSION = os.getenv("APP_VERSION", "2026.09.24")
 
 def _origens_cors():
     result = []
@@ -100,6 +100,14 @@ async def enforce_access(request, call_next):
                     raise HTTPException(423, 'Área técnica bloqueada. Consulte o aviso importante.')
             if path.startswith("/api/operacao/") and role not in ("gestor", "apoio"):
                 raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
+            if path.startswith('/api/lgpd'):
+                apoio_pode_registrar = request.method == 'POST' and path in ('/api/lgpd/solicitacoes', '/api/lgpd/incidentes')
+                if request.method == 'GET' and role not in ('gestor', 'apoio'):
+                    raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+                if request.method != 'GET' and not apoio_pode_registrar and role != 'gestor':
+                    raise HTTPException(403, 'Acesso exclusivo do gestor.')
+                if apoio_pode_registrar and role not in ('gestor', 'apoio'):
+                    raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
             if path == "/api/saude" and role not in ("gestor", "apoio"):
                 raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
             if path.startswith("/api/empresas") and request.method != "GET" and not eh_admin_plataforma(user):
@@ -116,7 +124,7 @@ async def enforce_access(request, call_next):
                   and role not in ("gestor", "apoio")):
                 raise HTTPException(403, "Acesso não autorizado.")
         except HTTPException as exc:
-            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/')) and hasattr(request.state, 'user'):
+            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd')) and hasattr(request.state, 'user'):
                 registrar_auditoria(request, None, 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             for key, value in (exc.headers or {}).items():
@@ -132,7 +140,7 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and (
-        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso')) or
+        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd')) or
         (path.startswith('/api/relatorios/') and '/imagens' in path and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
         resultado = 'sucesso' if response.status_code < 400 else ('negado' if response.status_code < 500 else 'erro')
@@ -208,12 +216,17 @@ def classificar_auditoria(request: Request):
         if method == 'DELETE' or 'limpeza' in path: verbo = 'excluir_em_lote'
     elif path.startswith('/api/backup'):
         categoria, entidade, verbo = 'dados', 'backup', 'gerar'
+    elif path.startswith('/api/lgpd'):
+        categoria, entidade = 'lgpd', 'configuracao'
+        if '/solicitacoes' in path: entidade = 'solicitacao_titular'
+        elif '/incidentes' in path: entidade = 'incidente_privacidade'
+        verbo = {'POST':'registrar', 'PUT':'atualizar', 'PATCH':'atualizar'}.get(method, verbo)
     elif path.startswith('/api/relatorios'):
         categoria, entidade = 'relatorios', 'imagem' if '/imagens' in path else 'relatorio'
         if path.endswith('/reprocessar'): verbo = 'reprocessar'
         elif entidade == 'imagem': verbo = {'POST':'adicionar', 'PUT':'substituir', 'DELETE':'excluir'}.get(method, verbo)
     entidade_id = None
-    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','relatorios','imagens','reprocessar','limpeza'}
+    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','relatorios','imagens','reprocessar','limpeza','lgpd','configuracao','solicitacoes','incidentes'}
     for part in reversed(segments):
         if part not in ignored and (re.fullmatch(r'[0-9a-fA-F-]{16,64}', part) or part.isdigit()):
             entidade_id = part[:120]
@@ -418,6 +431,7 @@ API_SECURITY_AVAILABLE = False
 IMAGE_SECURITY_AVAILABLE = False
 AUDIT_SECURITY_AVAILABLE = False
 AUDIT_DETAIL_AVAILABLE = False
+LGPD_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -680,7 +694,7 @@ def registrar_falha_login(chave: str, atual=None):
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
     global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
-    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE, LGPD_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -698,6 +712,7 @@ def init_supabase():
             ("relatorio_imagens", "empresa_id,sha256", "IMAGE_SECURITY_AVAILABLE"),
             ("auditoria_gestao", "request_id,status_code,ip_hash,user_agent_hash", "AUDIT_SECURITY_AVAILABLE"),
             ("auditoria_gestao", "categoria,entidade_tipo,entidade_id,descricao", "AUDIT_DETAIL_AVAILABLE"),
+            ("lgpd_configuracao", "empresa_id,politica_versao,retencao_dias", "LGPD_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -1487,10 +1502,29 @@ async def primeiro_acesso_page():
 @app.get('/api/primeiro-acesso')
 async def primeiro_acesso_status(request: Request):
     _, notice, version = onboarding_config()
+    terms_url, terms_version = notice, version
+    governance = {}
+    if LGPD_AVAILABLE:
+        try:
+            config = (supabase_client.table('lgpd_configuracao').select(
+                'politica_url,politica_versao,termos_url,termos_versao,controlador_nome,operador_nome,encarregado_nome,encarregado_email,canal_titular,finalidades,retencao_dias')
+                .eq('empresa_id', request.state.empresa_id).limit(1).execute().data or [])
+            if config:
+                notice = config[0].get('politica_url') or notice
+                version = config[0].get('politica_versao') or version
+                terms_url = config[0].get('termos_url') or notice
+                terms_version = config[0].get('termos_versao') or version
+                governance = {key: config[0].get(key) for key in (
+                    'controlador_nome','operador_nome','encarregado_nome','encarregado_email',
+                    'canal_titular','finalidades','retencao_dias')}
+        except Exception:
+            logger.info('Configuração LGPD da empresa ainda não disponível no primeiro acesso.')
     meta = request.state.user.get('app_metadata') or {}
     return {'pendente': meta.get('onboarding_required') is True,
         'senha_definida': bool(meta.get('onboarding_password_at')),
-        'aviso_url': notice, 'versao': version}
+        'aviso_url': notice, 'versao': version,
+        'termos_url': terms_url, 'termos_versao': terms_version,
+        'exigir_termos': LGPD_AVAILABLE, 'governanca': governance}
 
 @app.post('/api/primeiro-acesso/senha')
 async def primeiro_acesso_senha(request: Request):
@@ -1514,16 +1548,220 @@ async def primeiro_acesso_privacidade(request: Request):
     _, notice, version = onboarding_config()
     meta = request.state.user.get('app_metadata') or {}
     data = await request.json()
-    if not isinstance(data, dict) or data.get('ciencia') is not True or data.get('versao') != version:
+    if not isinstance(data, dict) or data.get('ciencia') is not True:
+        raise HTTPException(422, 'Leia o aviso atual e confirme ciência para continuar.')
+    terms_url, terms_version = notice, version
+    if LGPD_AVAILABLE:
+        try:
+            config = (supabase_client.table('lgpd_configuracao').select(
+                'politica_url,politica_versao,termos_url,termos_versao')
+                .eq('empresa_id', request.state.empresa_id).limit(1).execute().data or [])
+            if config:
+                notice = config[0].get('politica_url') or notice
+                version = config[0].get('politica_versao') or version
+                terms_url = config[0].get('termos_url') or notice
+                terms_version = config[0].get('termos_versao') or version
+        except Exception:
+            raise HTTPException(503, 'Não foi possível validar os documentos atuais.')
+        if (data.get('versao') != version or data.get('termos_ciencia') is not True
+                or data.get('termos_versao') != terms_version):
+            raise HTTPException(422, 'Leia e confirme a política e os termos atuais para continuar.')
+    elif data.get('versao') != version:
         raise HTTPException(422, 'Leia o aviso atual e confirme ciência para continuar.')
     if not meta.get('onboarding_password_at'):
         raise HTTPException(409, 'Defina sua senha primeiro.')
     if meta.get('onboarding_required') is True:
+        if LGPD_AVAILABLE:
+            try:
+                supabase_client.table('lgpd_aceites').insert({
+                    'empresa_id': request.state.empresa_id,
+                    'usuario_id': request.state.user['id'],
+                    'usuario_email': request.state.user.get('email'),
+                    'politica_versao': version,
+                    'politica_url': notice,
+                    'termos_versao': terms_version,
+                    'termos_url': terms_url,
+                    'finalidade': 'primeiro_acesso',
+                    'request_id': getattr(request.state, 'request_id', None),
+                }).execute()
+            except Exception:
+                logger.exception('Falha ao registrar aceite LGPD')
+                raise HTTPException(503, 'Não foi possível registrar o aceite. Tente novamente.')
         _admin_client().auth.admin.update_user_by_id(request.state.user['id'], {'app_metadata': {
             **meta, 'onboarding_required': False, 'privacy_notice_version': version,
             'privacy_notice_url': notice, 'privacy_acknowledged_at': datetime.now(timezone.utc).isoformat()}})
     revogar_sessoes_usuario(request.state.user['id'])
     return {'concluido': True, 'novo_login': True}
+
+
+def _texto_lgpd(data, campo, limite, obrigatorio=False):
+    valor = data.get(campo, '')
+    if not isinstance(valor, str):
+        raise HTTPException(422, f'Campo inválido: {campo}.')
+    valor = valor.strip()
+    if (obrigatorio and not valor) or len(valor) > limite:
+        raise HTTPException(422, f'Revise o campo {campo}.')
+    return valor
+
+
+def _url_lgpd(data, campo):
+    valor = _texto_lgpd(data, campo, 1000)
+    if valor:
+        parsed = urlsplit(valor)
+        if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+            raise HTTPException(422, f'{campo} deve ser uma URL HTTPS válida.')
+    return valor
+
+
+def _exigir_lgpd():
+    if not supabase_client or not LGPD_AVAILABLE:
+        raise HTTPException(503, 'Central LGPD indisponível. Execute a migração 015 no banco.')
+
+
+@app.get('/api/lgpd')
+async def consultar_lgpd(request: Request):
+    _exigir_lgpd()
+    empresa_id = request.state.empresa_id
+    try:
+        config = (supabase_client.table('lgpd_configuracao').select('*')
+                  .eq('empresa_id', empresa_id).limit(1).execute().data or [])
+        solicitacoes = (supabase_client.table('lgpd_solicitacoes').select('*')
+                        .eq('empresa_id', empresa_id).order('criado_em', desc=True).limit(100).execute().data or [])
+        incidentes = (supabase_client.table('lgpd_incidentes').select('*')
+                      .eq('empresa_id', empresa_id).order('detectado_em', desc=True).limit(100).execute().data or [])
+        aceites = (supabase_client.table('lgpd_aceites').select(
+            'id,usuario_email,politica_versao,termos_versao,finalidade,aceito_em')
+            .eq('empresa_id', empresa_id).order('aceito_em', desc=True).limit(100).execute().data or [])
+        padrao = {'empresa_id': empresa_id, 'controlador_nome':'', 'operador_nome':'',
+                  'encarregado_nome':'', 'encarregado_email':'', 'canal_titular':'',
+                  'finalidades':'', 'politica_url':'', 'politica_versao':'v1',
+                  'termos_url':'', 'termos_versao':'v1', 'retencao_dias':365}
+        return {'configuracao': config[0] if config else padrao, 'solicitacoes': solicitacoes,
+                'incidentes': incidentes, 'aceites': aceites}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception('Falha ao consultar central LGPD')
+        raise HTTPException(503, 'Não foi possível consultar a central LGPD.')
+
+
+@app.put('/api/lgpd/configuracao')
+async def salvar_lgpd_configuracao(request: Request):
+    _exigir_lgpd()
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(422, 'Configuração inválida.')
+    email = _texto_lgpd(data, 'encarregado_email', 254)
+    if email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+        raise HTTPException(422, 'Email do encarregado inválido.')
+    try:
+        retencao = int(data.get('retencao_dias', 365))
+    except (TypeError, ValueError):
+        raise HTTPException(422, 'Retenção inválida.')
+    if not 1 <= retencao <= 36500:
+        raise HTTPException(422, 'A retenção deve ficar entre 1 e 36500 dias.')
+    payload = {
+        'empresa_id': request.state.empresa_id,
+        'controlador_nome': _texto_lgpd(data, 'controlador_nome', 160, True),
+        'operador_nome': _texto_lgpd(data, 'operador_nome', 160),
+        'encarregado_nome': _texto_lgpd(data, 'encarregado_nome', 160),
+        'encarregado_email': email,
+        'canal_titular': _texto_lgpd(data, 'canal_titular', 500, True),
+        'finalidades': _texto_lgpd(data, 'finalidades', 4000, True),
+        'politica_url': _url_lgpd(data, 'politica_url'),
+        'politica_versao': _texto_lgpd(data, 'politica_versao', 120, True),
+        'termos_url': _url_lgpd(data, 'termos_url'),
+        'termos_versao': _texto_lgpd(data, 'termos_versao', 120, True),
+        'retencao_dias': retencao, 'atualizado_por': request.state.user['id'],
+        'atualizado_em': datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        result = supabase_client.table('lgpd_configuracao').upsert(payload, on_conflict='empresa_id').execute()
+        return {'configuracao': (result.data or [payload])[0], 'mensagem': 'Governança LGPD atualizada.'}
+    except Exception:
+        logger.exception('Falha ao salvar configuração LGPD')
+        raise HTTPException(503, 'Não foi possível salvar a configuração LGPD.')
+
+
+@app.post('/api/lgpd/solicitacoes')
+async def criar_solicitacao_lgpd(request: Request):
+    _exigir_lgpd()
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(422, 'Solicitação inválida.')
+    tipo = data.get('tipo')
+    if tipo not in ('acesso','correcao','exportacao','anonimizacao','exclusao','oposicao','revogacao'):
+        raise HTTPException(422, 'Tipo de solicitação inválido.')
+    email = _texto_lgpd(data, 'titular_email', 254, True).lower()
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email):
+        raise HTTPException(422, 'Email do titular inválido.')
+    payload = {'empresa_id':request.state.empresa_id,
+        'protocolo':f'SOL-{datetime.now(timezone.utc):%Y%m%d}-{secrets.token_hex(4).upper()}',
+        'tipo':tipo, 'titular_nome':_texto_lgpd(data,'titular_nome',160,True),
+        'titular_email':email, 'descricao':_texto_lgpd(data,'descricao',4000),
+        'criado_por':request.state.user['id'], 'atualizado_por':request.state.user['id']}
+    try:
+        result = supabase_client.table('lgpd_solicitacoes').insert(payload).execute()
+        return JSONResponse({'solicitacao':(result.data or [payload])[0]}, status_code=201)
+    except Exception:
+        logger.exception('Falha ao registrar solicitação LGPD')
+        raise HTTPException(503, 'Não foi possível registrar a solicitação.')
+
+
+@app.patch('/api/lgpd/solicitacoes/{solicitacao_id}')
+async def atualizar_solicitacao_lgpd(solicitacao_id: UUID, request: Request):
+    _exigir_lgpd()
+    data = await request.json()
+    status = data.get('status') if isinstance(data, dict) else None
+    if status not in ('aberta','em_analise','aguardando_titular','concluida','negada','cancelada'):
+        raise HTTPException(422, 'Status inválido.')
+    payload = {'status':status, 'resposta':_texto_lgpd(data,'resposta',4000),
+               'atualizado_por':request.state.user['id'], 'atualizado_em':datetime.now(timezone.utc).isoformat(),
+               'concluido_em':datetime.now(timezone.utc).isoformat() if status in ('concluida','negada','cancelada') else None}
+    result = (supabase_client.table('lgpd_solicitacoes').update(payload).eq('id', str(solicitacao_id))
+              .eq('empresa_id', request.state.empresa_id).execute())
+    if not result.data:
+        raise HTTPException(404, 'Solicitação não encontrada nesta empresa.')
+    return {'solicitacao':result.data[0]}
+
+
+@app.post('/api/lgpd/incidentes')
+async def criar_incidente_lgpd(request: Request):
+    _exigir_lgpd()
+    data = await request.json()
+    if not isinstance(data, dict) or data.get('severidade') not in ('baixa','media','alta','critica'):
+        raise HTTPException(422, 'Incidente inválido.')
+    payload = {'empresa_id':request.state.empresa_id,
+        'codigo':f'INC-{datetime.now(timezone.utc):%Y%m%d}-{secrets.token_hex(4).upper()}',
+        'titulo':_texto_lgpd(data,'titulo',200,True), 'severidade':data['severidade'],
+        'resumo':_texto_lgpd(data,'resumo',4000,True),
+        'dados_afetados':_texto_lgpd(data,'dados_afetados',4000),
+        'medidas':_texto_lgpd(data,'medidas',4000), 'criado_por':request.state.user['id'],
+        'atualizado_por':request.state.user['id']}
+    try:
+        result = supabase_client.table('lgpd_incidentes').insert(payload).execute()
+        return JSONResponse({'incidente':(result.data or [payload])[0]}, status_code=201)
+    except Exception:
+        logger.exception('Falha ao registrar incidente LGPD')
+        raise HTTPException(503, 'Não foi possível registrar o incidente.')
+
+
+@app.patch('/api/lgpd/incidentes/{incidente_id}')
+async def atualizar_incidente_lgpd(incidente_id: UUID, request: Request):
+    _exigir_lgpd()
+    data = await request.json()
+    status = data.get('status') if isinstance(data, dict) else None
+    if status not in ('aberto','investigando','contido','encerrado'):
+        raise HTTPException(422, 'Status inválido.')
+    payload = {'status':status, 'medidas':_texto_lgpd(data,'medidas',4000),
+               'comunicar_anpd':bool(data.get('comunicar_anpd')),
+               'comunicar_titulares':bool(data.get('comunicar_titulares')),
+               'atualizado_por':request.state.user['id'], 'atualizado_em':datetime.now(timezone.utc).isoformat()}
+    result = (supabase_client.table('lgpd_incidentes').update(payload).eq('id', str(incidente_id))
+              .eq('empresa_id', request.state.empresa_id).execute())
+    if not result.data:
+        raise HTTPException(404, 'Incidente não encontrado nesta empresa.')
+    return {'incidente':result.data[0]}
 
 @app.post("/api/empresas/{empresa_id}/acesso")
 async def ajustar_acesso_empresa(empresa_id: UUID, request: Request):
@@ -2312,6 +2550,7 @@ async def health_check():
             "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
             "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
             "auditoria_detalhada": AUDIT_DETAIL_AVAILABLE,
+            "lgpd_operacional": LGPD_AVAILABLE,
         },
     }
 
@@ -2330,6 +2569,7 @@ async def saude_detalhada(request: Request):
             "protecao_api": API_SECURITY_AVAILABLE,
             "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
             "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
+            "lgpd_operacional": LGPD_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })
