@@ -4,6 +4,7 @@ let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVer
 let healthTimer = null;
 let currentReports = [];
 let activeFilters = {}, reportText = '';
+let activeIncidentId = null, activeIncident = null;
 const PAGE_SIZE = 50;
 const AUDIT_PAGE_SIZE = 100;
 let auditOffset = 0, auditRows = [];
@@ -486,6 +487,29 @@ async function loadLgpd() {
     $('lgpdStatus').textContent='Central LGPD atualizada.';
   } catch(error) { $('lgpdStatus').textContent=error.message; }
 }
+function renderIncidentSignals(signals={}) {
+  const root=$('incidentSignals'); root.replaceChildren();
+  for(const [label,value] of [['Nível',signals.nivel||'—'],['Acessos negados (1h)',signals.negadas_ultima_hora||0],['Erros (1h)',signals.erros_ultima_hora||0],['Sessões ativas',signals.sessoes_ativas||0]]) { const card=document.createElement('article'); const span=document.createElement('span'); span.textContent=label; const strong=document.createElement('strong'); strong.textContent=value; card.append(span,strong); root.append(card); }
+  root.dataset.level=signals.nivel||'normal';
+}
+async function loadIncidents() {
+  $('incidentStatus').textContent='Consultando sinais e incidentes...';
+  try {
+    const data=await api('/api/incidentes'); renderIncidentSignals(data.sinais);
+    const body=$('incidentRows'); body.replaceChildren();
+    for(const item of (data.incidentes||[])){const tr=document.createElement('tr');for(const value of [item.codigo,item.titulo,item.severidade,item.status,item.avaliacao_risco,dateLabel(item.detectado_em)])cell(tr,value||'—');const td=document.createElement('td');const button=document.createElement('button');button.type='button';button.textContent='Responder';button.addEventListener('click',()=>openIncident(item.id));td.append(button);tr.append(td);body.append(tr);}
+    $('incidentStatus').textContent=(data.incidentes||[]).length+' incidente(s) registrado(s).';
+  } catch(error){$('incidentStatus').textContent=error.message;}
+}
+function renderIncidentChecklist(item) {
+  const checks=[['Logs preservados',item.logs_preservados],['Sessões revogadas',item.sessoes_revogadas_em],['Causa identificada',item.causa_raiz],['Correção registrada',item.correcao],['Risco avaliado',item.avaliacao_risco&&item.avaliacao_risco!=='nao_avaliado'],['Chaves rotacionadas',item.chaves_rotacionadas_em]];
+  const root=$('incidentChecklist');root.replaceChildren();for(const [label,done] of checks){const tag=document.createElement('span');tag.className=done?'done':'pending';tag.textContent=(done?'✓ ':'○ ')+label;root.append(tag);}
+}
+async function openIncident(id) {
+  activeIncidentId=id; $('incidentStatus').textContent='Carregando incidente...';
+  try {const data=await api('/api/incidentes/'+encodeURIComponent(id));if(activeIncidentId!==id)return;activeIncident=data.incidente;$('incidentDetail').hidden=false;$('incidentDetailTitle').textContent=(activeIncident.codigo||'Incidente')+' · '+(activeIncident.titulo||'');renderIncidentChecklist(activeIncident);lgpdSet('incidentContainment',activeIncident.medidas);lgpdSet('incidentRootCause',activeIncident.causa_raiz);lgpdSet('incidentCorrection',activeIncident.correcao);lgpdSet('incidentRisk',activeIncident.avaliacao_risco==='risco_relevante'?'risco_relevante':'sem_risco_relevante');$('incidentNotifyOwners').checked=Boolean(activeIncident.comunicado_responsaveis);$('incidentNotifyAnpd').checked=Boolean(activeIncident.comunicar_anpd);$('incidentNotifyHolders').checked=Boolean(activeIncident.comunicar_titulares);const timeline=$('incidentTimeline');timeline.replaceChildren();for(const event of (data.eventos||[])){const card=document.createElement('article');const title=document.createElement('strong');title.textContent=event.tipo.replaceAll('_',' ')+' · '+dateLabel(event.criado_em);const text=document.createElement('p');text.textContent=event.descricao;const author=document.createElement('span');author.textContent=event.usuario_email||'Sistema';card.append(title,text,author);timeline.append(card);}const canManage=currentUser?.app_metadata?.role==='gestor';$('incidentDetail').querySelectorAll('form input,form textarea,form select,form button,#preserveIncidentLogs,#revokeIncidentUser,#revokeIncidentCompany,#confirmKeyRotation,#finishIncident').forEach(node=>node.disabled=!canManage);$('blockIncidentCompany').hidden=!currentUser?.app_metadata?.platform_admin;$('incidentStatus').textContent='';}catch(error){$('incidentStatus').textContent=error.message;}
+}
+async function incidentAction(acao,payload={}) {if(!activeIncidentId)return;try{const data=await api('/api/incidentes/'+encodeURIComponent(activeIncidentId)+'/acao',{method:'POST',body:JSON.stringify({acao,...payload})});$('incidentStatus').textContent=data.mensagem||'Ação registrada.';await openIncident(activeIncidentId);await loadIncidents();}catch(error){$('incidentStatus').textContent=error.message;}}
 async function enter(user) {
   await loadEmpresas();
   const permissions = await api('/api/permissoes');
@@ -496,7 +520,7 @@ async function enter(user) {
   $('logout').hidden = false; $('managementButton').hidden = false;
   document.querySelectorAll('[data-management-target]').forEach(b => {
     const target = b.dataset.managementTarget;
-    b.hidden = ['audit','lgpd'].includes(target)
+    b.hidden = ['audit','lgpd','incidents'].includes(target)
       ? !['gestor','apoio'].includes(role)
       : role !== 'gestor' || (target === 'companies' && !permissions.gerenciar_empresas);
   });
@@ -603,6 +627,18 @@ $('lgpdConfigForm')?.addEventListener('submit',async event=>{event.preventDefaul
 $('lgpdRequestForm')?.addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{await api('/api/lgpd/solicitacoes',{method:'POST',body:JSON.stringify({tipo:$('lgpdRequestType').value,titular_nome:$('lgpdHolderName').value.trim(),titular_email:$('lgpdHolderEmail').value.trim(),descricao:$('lgpdRequestDescription').value.trim()})});event.target.reset();await loadLgpd();}catch(error){$('lgpdStatus').textContent=error.message;}finally{button.disabled=false;}});
 $('lgpdIncidentForm')?.addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{await api('/api/lgpd/incidentes',{method:'POST',body:JSON.stringify({titulo:$('lgpdIncidentTitle').value.trim(),severidade:$('lgpdIncidentSeverity').value,resumo:$('lgpdIncidentSummary').value.trim(),dados_afetados:$('lgpdAffectedData').value.trim(),medidas:$('lgpdMeasures').value.trim()})});event.target.reset();await loadLgpd();}catch(error){$('lgpdStatus').textContent=error.message;}finally{button.disabled=false;}});
 $('exportLgpdData')?.addEventListener('click',()=>baixarArquivoAutenticado('/api/backup?formato=json','exportacao-lgpd.json'));
+$('detectIncidents')?.addEventListener('click',async()=>{const button=$('detectIncidents');button.disabled=true;$('incidentStatus').textContent='Analisando eventos da última hora...';try{const data=await api('/api/incidentes/detectar',{method:'POST',body:'{}'});renderIncidentSignals(data.sinais);$('incidentStatus').textContent=data.mensagem;}catch(error){$('incidentStatus').textContent=error.message;}finally{button.disabled=false;}});
+$('incidentForm')?.addEventListener('submit',async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{const data=await api('/api/incidentes',{method:'POST',body:JSON.stringify({titulo:$('incidentTitle').value.trim(),severidade:$('incidentSeverity').value,resumo:$('incidentSummary').value.trim(),dados_afetados:$('incidentAffected').value.trim(),origem_deteccao:$('incidentSource').value.trim(),responsavel_email:$('incidentOwner').value.trim()})});event.target.reset();await loadIncidents();await openIncident(data.incidente.id);}catch(error){$('incidentStatus').textContent=error.message;}finally{button.disabled=false;}});
+$('closeIncidentDetail')?.addEventListener('click',()=>{activeIncidentId=null;activeIncident=null;$('incidentDetail').hidden=true;});
+$('preserveIncidentLogs')?.addEventListener('click',()=>incidentAction('preservar_logs'));
+$('revokeIncidentUser')?.addEventListener('click',()=>{const email=$('incidentUserEmail').value.trim();if(!email){$('incidentStatus').textContent='Informe o email do usuário afetado.';return;}if(confirm('Revogar todas as sessões deste usuário?'))incidentAction('revogar_usuario',{email});});
+$('revokeIncidentCompany')?.addEventListener('click',()=>{if(confirm('Isto encerrará todas as sessões da empresa, inclusive a sua. Continuar?'))incidentAction('revogar_empresa',{confirmacao:'REVOGAR SESSOES'});});
+$('blockIncidentCompany')?.addEventListener('click',()=>{if(confirm('Bloquear preventivamente o acesso de toda a empresa?'))incidentAction('bloquear_empresa',{confirmacao:'BLOQUEAR EMPRESA'});});
+$('confirmKeyRotation')?.addEventListener('click',()=>{if(confirm('Confirme somente depois de substituir as chaves no Supabase/Vercel ou no servidor próprio.'))incidentAction('confirmar_rotacao_chaves',{confirmacao:'CHAVES ROTACIONADAS'});});
+$('incidentContainmentForm')?.addEventListener('submit',event=>{event.preventDefault();incidentAction('contencao',{descricao:$('incidentContainment').value.trim()});});
+$('incidentCorrectionForm')?.addEventListener('submit',event=>{event.preventDefault();incidentAction('correcao',{causa_raiz:$('incidentRootCause').value.trim(),correcao:$('incidentCorrection').value.trim()});});
+$('incidentCommunicationForm')?.addEventListener('submit',event=>{event.preventDefault();incidentAction('comunicacao',{avaliacao_risco:$('incidentRisk').value,comunicar_responsaveis:$('incidentNotifyOwners').checked,comunicar_anpd:$('incidentNotifyAnpd').checked,comunicar_titulares:$('incidentNotifyHolders').checked});});
+$('finishIncident')?.addEventListener('click',()=>{if(confirm('Encerrar este incidente após verificar todas as etapas obrigatórias?'))incidentAction('encerrar');});
 $('companyForm')?.addEventListener('submit', async event => {
   event.preventDefault();
   if (!currentUser?.app_metadata?.platform_admin) return;
@@ -620,7 +656,7 @@ $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
 function showManagement(section = '') {
   document.getElementById('noticePanel')?.setAttribute('hidden','');
-  const sections = {user:'managementUser', password:'managementPassword', audit:'managementAudit', lgpd:'managementLgpd', bank:'managementBank', companies:'managementCompanies'};
+  const sections = {user:'managementUser', password:'managementPassword', audit:'managementAudit', lgpd:'managementLgpd', incidents:'managementIncidents', bank:'managementBank', companies:'managementCompanies'};
   $('managementHome').hidden = Boolean(section);
   Object.values(sections).forEach(id => $(id).hidden = sections[section] !== id);
 }
@@ -636,6 +672,7 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   if(target === 'password') { $('passwordManagerForm').reset(); $('resetLinkForm')?.reset(); $('resetLinkResult').hidden=true; $('passwordStatus').textContent=''; await loadPasswordHistory(); }
   if(target === 'audit') { auditOffset = 0; $('auditStatus').textContent=''; await loadAudit(); }
   if(target === 'lgpd') { $('lgpdStatus').textContent=''; await loadLgpd(); }
+  if(target === 'incidents') { activeIncidentId=null; activeIncident=null; $('incidentDetail').hidden=true; $('incidentStatus').textContent=''; await loadIncidents(); }
   if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; await loadBankStats(); }
   if(target === 'companies') { $('companyStatus').textContent=''; await loadEmpresas(); }
 }));

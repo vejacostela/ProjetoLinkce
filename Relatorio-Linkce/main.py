@@ -108,6 +108,14 @@ async def enforce_access(request, call_next):
                     raise HTTPException(403, 'Acesso exclusivo do gestor.')
                 if apoio_pode_registrar and role not in ('gestor', 'apoio'):
                     raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+            if path.startswith('/api/incidentes'):
+                apoio_pode_registrar = request.method == 'POST' and path in ('/api/incidentes', '/api/incidentes/detectar')
+                if request.method == 'GET' and role not in ('gestor', 'apoio'):
+                    raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+                if request.method != 'GET' and not apoio_pode_registrar and role != 'gestor':
+                    raise HTTPException(403, 'Acesso exclusivo do gestor.')
+                if apoio_pode_registrar and role not in ('gestor', 'apoio'):
+                    raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
             if path == "/api/saude" and role not in ("gestor", "apoio"):
                 raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
             if path.startswith("/api/empresas") and request.method != "GET" and not eh_admin_plataforma(user):
@@ -124,7 +132,7 @@ async def enforce_access(request, call_next):
                   and role not in ("gestor", "apoio")):
                 raise HTTPException(403, "Acesso não autorizado.")
         except HTTPException as exc:
-            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd')) and hasattr(request.state, 'user'):
+            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd','/api/incidentes')) and hasattr(request.state, 'user'):
                 registrar_auditoria(request, None, 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             for key, value in (exc.headers or {}).items():
@@ -140,7 +148,7 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and (
-        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd')) or
+        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd','/api/incidentes')) or
         (path.startswith('/api/relatorios/') and '/imagens' in path and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
         resultado = 'sucesso' if response.status_code < 400 else ('negado' if response.status_code < 500 else 'erro')
@@ -221,12 +229,17 @@ def classificar_auditoria(request: Request):
         if '/solicitacoes' in path: entidade = 'solicitacao_titular'
         elif '/incidentes' in path: entidade = 'incidente_privacidade'
         verbo = {'POST':'registrar', 'PUT':'atualizar', 'PATCH':'atualizar'}.get(method, verbo)
+    elif path.startswith('/api/incidentes'):
+        categoria, entidade = 'seguranca', 'incidente'
+        if path.endswith('/detectar'): verbo = 'detectar'
+        elif path.endswith('/acao'): verbo = 'responder'
+        else: verbo = {'POST':'registrar', 'PATCH':'atualizar'}.get(method, verbo)
     elif path.startswith('/api/relatorios'):
         categoria, entidade = 'relatorios', 'imagem' if '/imagens' in path else 'relatorio'
         if path.endswith('/reprocessar'): verbo = 'reprocessar'
         elif entidade == 'imagem': verbo = {'POST':'adicionar', 'PUT':'substituir', 'DELETE':'excluir'}.get(method, verbo)
     entidade_id = None
-    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','relatorios','imagens','reprocessar','limpeza','lgpd','configuracao','solicitacoes','incidentes'}
+    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','relatorios','imagens','reprocessar','limpeza','lgpd','configuracao','solicitacoes','incidentes','detectar','acao'}
     for part in reversed(segments):
         if part not in ignored and (re.fullmatch(r'[0-9a-fA-F-]{16,64}', part) or part.isdigit()):
             entidade_id = part[:120]
@@ -432,6 +445,7 @@ IMAGE_SECURITY_AVAILABLE = False
 AUDIT_SECURITY_AVAILABLE = False
 AUDIT_DETAIL_AVAILABLE = False
 LGPD_AVAILABLE = False
+INCIDENT_RESPONSE_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -694,7 +708,7 @@ def registrar_falha_login(chave: str, atual=None):
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
     global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
-    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE, LGPD_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE, LGPD_AVAILABLE, INCIDENT_RESPONSE_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -713,6 +727,7 @@ def init_supabase():
             ("auditoria_gestao", "request_id,status_code,ip_hash,user_agent_hash", "AUDIT_SECURITY_AVAILABLE"),
             ("auditoria_gestao", "categoria,entidade_tipo,entidade_id,descricao", "AUDIT_DETAIL_AVAILABLE"),
             ("lgpd_configuracao", "empresa_id,politica_versao,retencao_dias", "LGPD_AVAILABLE"),
+            ("incidente_eventos", "empresa_id,incidente_id,tipo,metadados", "INCIDENT_RESPONSE_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -1763,6 +1778,195 @@ async def atualizar_incidente_lgpd(incidente_id: UUID, request: Request):
         raise HTTPException(404, 'Incidente não encontrado nesta empresa.')
     return {'incidente':result.data[0]}
 
+
+def _exigir_resposta_incidentes():
+    if not supabase_client or not INCIDENT_RESPONSE_AVAILABLE:
+        raise HTTPException(503, 'Resposta a incidentes indisponível. Execute a migração 016 no banco.')
+
+
+def _incidente_da_empresa(incidente_id, request):
+    rows = (supabase_client.table('lgpd_incidentes').select('*').eq('id', str(incidente_id))
+            .eq('empresa_id', request.state.empresa_id).limit(1).execute().data or [])
+    if not rows:
+        raise HTTPException(404, 'Incidente não encontrado nesta empresa.')
+    return rows[0]
+
+
+def _evento_incidente(request, incidente_id, tipo, descricao, metadados=None):
+    supabase_client.table('incidente_eventos').insert({
+        'empresa_id':request.state.empresa_id, 'incidente_id':str(incidente_id),
+        'tipo':tipo, 'descricao':descricao[:4000], 'metadados':metadados or {},
+        'usuario_id':request.state.user.get('id'),
+        'usuario_email':request.state.user.get('email'),
+    }).execute()
+
+
+def _sinais_incidente(request):
+    desde = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    query = (supabase_client.table('auditoria_gestao')
+             .select('id,resultado,status_code,rota,usuario_email,criado_em,request_id')
+             .eq('empresa_id', request.state.empresa_id).gte('criado_em', desde)
+             .order('criado_em', desc=True).limit(500))
+    rows = query.execute().data or []
+    negadas = sum(1 for row in rows if row.get('resultado') == 'negado')
+    erros = sum(1 for row in rows if row.get('resultado') == 'erro')
+    criticas = [row for row in rows if row.get('status_code') in (401,403,423,429,500,502,503)][:20]
+    sessoes = 0
+    if AUTH_SECURITY_AVAILABLE:
+        result = (supabase_client.table('sessoes_ativas').select('sessao_id', count='exact')
+                  .eq('empresa_id', request.state.empresa_id).is_('revogada_em', 'null').execute())
+        sessoes = result.count if result.count is not None else len(result.data or [])
+    nivel = 'critico' if negadas >= 10 or erros >= 5 else ('atencao' if negadas >= 5 or erros >= 2 else 'normal')
+    return {'nivel':nivel, 'negadas_ultima_hora':negadas, 'erros_ultima_hora':erros,
+            'sessoes_ativas':sessoes, 'eventos_recentes':criticas}
+
+
+@app.get('/api/incidentes')
+async def listar_resposta_incidentes(request: Request):
+    _exigir_resposta_incidentes()
+    try:
+        incidents = (supabase_client.table('lgpd_incidentes').select('*')
+                     .eq('empresa_id', request.state.empresa_id)
+                     .order('detectado_em', desc=True).limit(100).execute().data or [])
+        return {'incidentes':incidents, 'sinais':_sinais_incidente(request)}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception('Falha ao listar resposta a incidentes')
+        raise HTTPException(503, 'Não foi possível consultar a resposta a incidentes.')
+
+
+@app.post('/api/incidentes/detectar')
+async def detectar_incidentes(request: Request):
+    _exigir_resposta_incidentes()
+    try:
+        sinais = _sinais_incidente(request)
+        return {'sinais':sinais, 'mensagem':'Verificação concluída. Abra um incidente se houver indícios que exijam investigação.'}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception('Falha na detecção de incidentes')
+        raise HTTPException(503, 'Não foi possível executar a detecção agora.')
+
+
+@app.post('/api/incidentes')
+async def abrir_incidente_resposta(request: Request):
+    _exigir_resposta_incidentes()
+    data = await request.json()
+    if not isinstance(data, dict) or data.get('severidade') not in ('baixa','media','alta','critica'):
+        raise HTTPException(422, 'Dados do incidente inválidos.')
+    payload = {'empresa_id':request.state.empresa_id,
+        'codigo':f'SEC-{datetime.now(timezone.utc):%Y%m%d}-{secrets.token_hex(4).upper()}',
+        'titulo':_texto_lgpd(data,'titulo',200,True), 'severidade':data['severidade'],
+        'resumo':_texto_lgpd(data,'resumo',4000,True),
+        'dados_afetados':_texto_lgpd(data,'dados_afetados',4000),
+        'origem_deteccao':_texto_lgpd(data,'origem_deteccao',120) or 'manual',
+        'responsavel_email':_texto_lgpd(data,'responsavel_email',254),
+        'empresas_afetadas':_texto_lgpd(data,'empresas_afetadas',1000),
+        'criado_por':request.state.user['id'], 'atualizado_por':request.state.user['id']}
+    try:
+        result = supabase_client.table('lgpd_incidentes').insert(payload).execute()
+        incident = (result.data or [payload])[0]
+        _evento_incidente(request, incident.get('id'), 'criado', 'Incidente aberto para investigação.',
+                          {'codigo':incident.get('codigo'), 'severidade':incident.get('severidade')})
+        return JSONResponse({'incidente':incident}, status_code=201)
+    except Exception:
+        logger.exception('Falha ao abrir incidente')
+        raise HTTPException(503, 'Não foi possível abrir o incidente.')
+
+
+@app.get('/api/incidentes/{incidente_id}')
+async def detalhe_resposta_incidente(incidente_id: UUID, request: Request):
+    _exigir_resposta_incidentes()
+    incident = _incidente_da_empresa(incidente_id, request)
+    events = (supabase_client.table('incidente_eventos').select('*')
+              .eq('empresa_id', request.state.empresa_id).eq('incidente_id', str(incidente_id))
+              .order('criado_em', desc=True).limit(300).execute().data or [])
+    return {'incidente':incident, 'eventos':events}
+
+
+@app.post('/api/incidentes/{incidente_id}/acao')
+async def executar_acao_incidente(incidente_id: UUID, request: Request):
+    _exigir_resposta_incidentes()
+    incident = _incidente_da_empresa(incidente_id, request)
+    data = await request.json()
+    action = data.get('acao') if isinstance(data, dict) else None
+    now = datetime.now(timezone.utc).isoformat()
+    update, event_type, description, metadata = {'atualizado_por':request.state.user['id'], 'atualizado_em':now}, 'nota', '', {}
+    if action == 'preservar_logs':
+        since = (datetime.now(timezone.utc) - timedelta(hours=72)).isoformat()
+        logs = (supabase_client.table('auditoria_gestao').select(
+            'id,acao,metodo,rota,resultado,usuario_email,request_id,status_code,criado_em')
+            .eq('empresa_id', request.state.empresa_id).gte('criado_em', since)
+            .order('criado_em').limit(5000).execute().data or [])
+        digest = hashlib.sha256(json.dumps(logs, ensure_ascii=False, sort_keys=True, default=str).encode()).hexdigest()
+        reference = {'janela_horas':72, 'quantidade':len(logs), 'primeiro_id':logs[0].get('id') if logs else None,
+                     'ultimo_id':logs[-1].get('id') if logs else None, 'sha256':digest}
+        update.update({'logs_preservados':True, 'logs_referencia':json.dumps(reference, ensure_ascii=False)})
+        event_type, description, metadata = 'preservacao_logs', 'Logs imutáveis referenciados e verificados por hash.', reference
+    elif action == 'revogar_usuario':
+        email = _texto_lgpd(data, 'email', 254, True).lower()
+        if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email): raise HTTPException(422, 'Email inválido.')
+        target = _find_user_by_email(_admin_client(), email)
+        membership = (supabase_client.table('usuarios_empresas').select('usuario_id').eq('usuario_id', target.id)
+                      .eq('empresa_id', request.state.empresa_id).eq('ativo', True).limit(1).execute().data or [])
+        if not membership: raise HTTPException(404, 'Usuário não pertence à empresa ativa.')
+        revogar_sessoes_usuario(target.id)
+        update['sessoes_revogadas_em'] = now
+        event_type, description, metadata = 'revogacao_sessoes', 'Sessões do usuário afetado foram revogadas.', {'usuario_email':email}
+    elif action == 'revogar_empresa':
+        if data.get('confirmacao') != 'REVOGAR SESSOES': raise HTTPException(422, 'Confirmação inválida.')
+        supabase_client.table('sessoes_ativas').update({'revogada_em':now}).eq(
+            'empresa_id', request.state.empresa_id).is_('revogada_em', 'null').execute()
+        update['sessoes_revogadas_em'] = now
+        event_type, description = 'revogacao_sessoes', 'Todas as sessões ativas da empresa foram revogadas.'
+    elif action == 'bloquear_empresa':
+        if not eh_admin_plataforma(request.state.user): raise HTTPException(403, 'Somente a administração da plataforma pode bloquear a empresa.')
+        if data.get('confirmacao') != 'BLOQUEAR EMPRESA': raise HTTPException(422, 'Confirmação inválida.')
+        supabase_client.table('empresas').update({'bloqueada':True, 'liberada_ate':None,
+            'motivo_bloqueio':'Bloqueio preventivo durante resposta a incidente'}).eq('id', request.state.empresa_id).execute()
+        update['empresa_bloqueada_em'] = now
+        event_type, description = 'bloqueio_empresa', 'Empresa bloqueada preventivamente pela administração da plataforma.'
+    elif action == 'confirmar_rotacao_chaves':
+        if data.get('confirmacao') != 'CHAVES ROTACIONADAS': raise HTTPException(422, 'Confirmação inválida.')
+        update['chaves_rotacionadas_em'] = now
+        event_type, description = 'rotacao_chaves', 'Rotação externa das chaves foi confirmada. Nenhum segredo foi armazenado.'
+    elif action == 'contencao':
+        note = _texto_lgpd(data, 'descricao', 4000, True)
+        update.update({'status':'contido', 'medidas':note})
+        event_type, description = 'contencao', note
+    elif action == 'correcao':
+        root = _texto_lgpd(data, 'causa_raiz', 4000, True); correction = _texto_lgpd(data, 'correcao', 4000, True)
+        update.update({'causa_raiz':root, 'correcao':correction})
+        event_type, description = 'correcao', correction
+    elif action == 'comunicacao':
+        risk = data.get('avaliacao_risco')
+        if risk not in ('sem_risco_relevante','risco_relevante'): raise HTTPException(422, 'Avaliação de risco inválida.')
+        update.update({'avaliacao_risco':risk, 'comunicado_responsaveis':bool(data.get('comunicar_responsaveis')),
+                       'comunicar_anpd':bool(data.get('comunicar_anpd')),
+                       'comunicar_titulares':bool(data.get('comunicar_titulares'))})
+        event_type, description, metadata = 'comunicacao', 'Avaliação de comunicação registrada.', {
+            'avaliacao_risco':risk, 'responsaveis':update['comunicado_responsaveis'],
+            'anpd':update['comunicar_anpd'], 'titulares':update['comunicar_titulares']}
+    elif action == 'encerrar':
+        if not incident.get('logs_preservados') or not incident.get('causa_raiz') or not incident.get('correcao') or incident.get('avaliacao_risco') == 'nao_avaliado':
+            raise HTTPException(409, 'Preserve os logs, registre causa e correção e avalie a comunicação antes de encerrar.')
+        update.update({'status':'encerrado', 'encerrado_em':now})
+        event_type, description = 'encerramento', 'Incidente encerrado após verificação das etapas obrigatórias.'
+    else:
+        raise HTTPException(422, 'Ação de resposta inválida.')
+    try:
+        result = (supabase_client.table('lgpd_incidentes').update(update).eq('id', str(incidente_id))
+                  .eq('empresa_id', request.state.empresa_id).execute())
+        if not result.data: raise HTTPException(404, 'Incidente não encontrado nesta empresa.')
+        _evento_incidente(request, incidente_id, event_type, description, metadata)
+        return {'incidente':result.data[0], 'mensagem':description}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception('Falha na ação de resposta a incidente')
+        raise HTTPException(503, 'Não foi possível concluir a ação de resposta.')
+
 @app.post("/api/empresas/{empresa_id}/acesso")
 async def ajustar_acesso_empresa(empresa_id: UUID, request: Request):
     if not eh_admin_plataforma(request.state.user):
@@ -2551,6 +2755,7 @@ async def health_check():
             "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
             "auditoria_detalhada": AUDIT_DETAIL_AVAILABLE,
             "lgpd_operacional": LGPD_AVAILABLE,
+            "resposta_incidentes": INCIDENT_RESPONSE_AVAILABLE,
         },
     }
 
@@ -2570,6 +2775,7 @@ async def saude_detalhada(request: Request):
             "seguranca_imagens": IMAGE_SECURITY_AVAILABLE,
             "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
             "lgpd_operacional": LGPD_AVAILABLE,
+            "resposta_incidentes": INCIDENT_RESPONSE_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })
