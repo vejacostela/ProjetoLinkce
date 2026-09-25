@@ -8,6 +8,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - ${SERVER_SECURITY_DIR:-/var/lib/sistema-campo/security}:/security:ro
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true

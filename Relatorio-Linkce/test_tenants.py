@@ -138,6 +138,9 @@ class TenantTests(unittest.TestCase):
         with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
             self.assertIn('database/install/install_cloud.sql', archive.namelist())
             self.assertIn('deploy/compose.yml', archive.namelist())
+            self.assertIn('deploy/server_security_check.py', archive.namelist())
+            self.assertIn('deploy/backup_database.sh', archive.namelist())
+            self.assertIn('deploy/.backup.env.example', archive.namelist())
             self.assertNotIn('deploy/.env', archive.namelist())
 
 if __name__ == '__main__':

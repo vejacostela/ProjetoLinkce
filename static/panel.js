@@ -654,9 +654,38 @@ $('printReports').addEventListener('click',()=>window.print());
 $('previous').addEventListener('click',()=>{offset=Math.max(0,offset-PAGE_SIZE);loadReports();});
 $('next').addEventListener('click',()=>{offset+=PAGE_SIZE;loadReports();});
 $('logout').addEventListener('click',async()=>{signedOut();try{await client.auth.signOut({scope:'local'});}catch(_){$('loginStatus').textContent='Sessão local encerrada.';}});
+const SERVER_CONTROL_FIELDS = ['firewall_ativo','https_valido','banco_nao_exposto','administracao_restrita','usuario_sem_admin','atualizacoes_controladas','monitoramento_ativo','backup_local','backup_externo','restauracao_testada'];
+const serverBytes = value => Number.isFinite(Number(value)) ? new Intl.NumberFormat('pt-BR',{style:'unit',unit:'megabyte',maximumFractionDigits:1}).format(Number(value)/1048576) : '—';
+function serverPill(label, ok, detail='') {
+  const item=document.createElement('article'); item.className='server-pill'; item.dataset.state=ok===true?'ok':ok===false?'warn':'unknown';
+  const title=document.createElement('strong'); title.textContent=label; const text=document.createElement('span'); text.textContent=detail || (ok===true?'Conforme':ok===false?'Requer atenção':'Não verificado');
+  item.append(title,text); return item;
+}
+async function loadServerSecurity() {
+  const form=$('serverSecurityForm'), rows=$('serverBackupRows'), summary=$('serverSummary'), hostBox=$('serverHostChecks');
+  if(!form || !rows || !summary || !hostBox) return;
+  $('serverStatus').textContent='Consultando controles...'; rows.replaceChildren(); summary.replaceChildren(); hostBox.replaceChildren();
+  try {
+    const data=await api('/api/servidor/seguranca'), controls=data.controles||{}, resources=data.recursos||{}, host=data.host||{};
+    summary.append(serverPill('Conformidade',data.conformidade?.percentual===100,`${data.conformidade?.concluidos||0} de ${data.conformidade?.total||10} controles`));
+    summary.append(serverPill('Disco',Number(resources.disco_percentual)<85,`${resources.disco_percentual??'—'}% · ${serverBytes(resources.disco_usado_bytes)} usados`));
+    summary.append(serverPill('Memória',Number(resources.memoria_percentual)<90,`${resources.memoria_percentual??'—'}% · ${serverBytes(resources.memoria_usada_bytes)} usados`));
+    summary.append(serverPill('Modo',data.modo==='servidor_proprio',data.modo==='servidor_proprio'?'Servidor próprio':'Cloud — controles do host não se aplicam a esta implantação'));
+    hostBox.append(serverPill('Diagnóstico do host',host.disponivel&&host.atualizado,host.disponivel?`${host.hostname||'host'} · ${Math.round((host.idade_segundos||0)/60)} min atrás`:host.motivo));
+    hostBox.append(serverPill('Firewall detectado',host.firewall_active,host.firewall_provider));
+    hostBox.append(serverPill('Certificado HTTPS',host.https_valid,host.certificate_expires_at||''));
+    hostBox.append(serverPill('Banco sem porta pública',host.database_not_public,host.database_not_public===null?'Não foi possível verificar':''));
+    hostBox.append(serverPill('Diagnóstico sem root',host.non_root_user,'O container da aplicação usa o usuário restrito linkce.'));
+    for(const field of SERVER_CONTROL_FIELDS) if(form.elements[field]) form.elements[field].checked=controls[field]===true;
+    form.elements.observacoes.value=controls.observacoes||''; form.elements.confirmacao.value='';
+    const canManage=currentUser?.app_metadata?.role==='gestor'; form.querySelectorAll('input,textarea,button').forEach(node=>node.disabled=!canManage); $('serverBackupForm').querySelectorAll('input,textarea,select,button').forEach(node=>node.disabled=!canManage);
+    for(const item of (data.backups||[])){const tr=document.createElement('tr');for(const value of [dateLabel(item.executado_em),item.tipo,item.status,item.referencia||'—',item.executado_email||'—'])cell(tr,value);rows.append(tr);}
+    $('serverStatus').textContent=(data.backups||[]).length?'Histórico carregado.':'Nenhum backup registrado ainda.';
+  } catch(error) {$('serverStatus').textContent=error.message;}
+}
 function showManagement(section = '') {
   document.getElementById('noticePanel')?.setAttribute('hidden','');
-  const sections = {user:'managementUser', password:'managementPassword', audit:'managementAudit', lgpd:'managementLgpd', incidents:'managementIncidents', bank:'managementBank', companies:'managementCompanies'};
+  const sections = {user:'managementUser', password:'managementPassword', audit:'managementAudit', lgpd:'managementLgpd', incidents:'managementIncidents', server:'managementServer', bank:'managementBank', companies:'managementCompanies'};
   $('managementHome').hidden = Boolean(section);
   Object.values(sections).forEach(id => $(id).hidden = sections[section] !== id);
 }
@@ -673,11 +702,22 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   if(target === 'audit') { auditOffset = 0; $('auditStatus').textContent=''; await loadAudit(); }
   if(target === 'lgpd') { $('lgpdStatus').textContent=''; await loadLgpd(); }
   if(target === 'incidents') { activeIncidentId=null; activeIncident=null; $('incidentDetail').hidden=true; $('incidentStatus').textContent=''; await loadIncidents(); }
+  if(target === 'server') { $('serverStatus').textContent=''; await loadServerSecurity(); }
   if(target === 'bank') { clearBankPreview(); $('bankStatus').textContent=''; await loadBankStats(); }
   if(target === 'companies') { $('companyStatus').textContent=''; await loadEmpresas(); }
 }));
 document.querySelectorAll('[data-management-back]').forEach(button=>button.addEventListener('click',()=>showManagement()));
 $('managementDialog').addEventListener('close',()=>{showManagement(); clearBankPreview();});
+$('serverSecurityForm')?.addEventListener('submit',async event=>{
+  event.preventDefault(); const button=event.submitter; button.disabled=true;
+  try {const form=new FormData(event.target), payload={observacoes:String(form.get('observacoes')||''),confirmacao:String(form.get('confirmacao')||'')};for(const field of SERVER_CONTROL_FIELDS)payload[field]=form.get(field)==='on';const out=await api('/api/servidor/seguranca',{method:'PUT',body:JSON.stringify(payload)});$('serverStatus').textContent=out.mensagem;await loadServerSecurity();}
+  catch(error){$('serverStatus').textContent=error.message;}finally{button.disabled=false;}
+});
+$('serverBackupForm')?.addEventListener('submit',async event=>{
+  event.preventDefault(); const button=event.submitter; button.disabled=true;
+  try {const form=new FormData(event.target), raw=String(form.get('tamanho_bytes')||'').trim(), payload={tipo:form.get('tipo'),status:form.get('status'),referencia:String(form.get('referencia')||''),checksum_sha256:String(form.get('checksum_sha256')||''),detalhes:String(form.get('detalhes')||'')};if(raw)payload.tamanho_bytes=Number(raw);const out=await api('/api/servidor/backups',{method:'POST',body:JSON.stringify(payload)});$('serverStatus').textContent=out.mensagem;event.target.reset();await loadServerSecurity();}
+  catch(error){$('serverStatus').textContent=error.message;}finally{button.disabled=false;}
+});
 async function loadPasswordHistory() {
   const userId = currentUser?.id; $('passwordHistory').replaceChildren(); $('passwordHistoryEmpty').hidden = true;
   try {

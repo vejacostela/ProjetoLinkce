@@ -23,7 +23,7 @@ central entre instalações será parte do controle comercial futuro.
 1. Faça backup antes de atualizar uma base existente. Confirme o projeto de destino.
 2. Execute TODO `database/install/install_cloud.sql` no SQL Editor do Supabase.
    Não execute as migrações individualmente: o instalador controla ordem, transação e versões.
-3. O resultado deve mostrar sete migrações aplicadas. Reexecutar o mesmo arquivo não
+3. O resultado deve mostrar todas as migrações versionadas aplicadas. Reexecutar o mesmo arquivo não
    reaplica migrações e não reativa empresas ou usuários bloqueados.
 4. Configure no projeto Vercel `SUPABASE_URL`, `SUPABASE_KEY` (pública) e
    `SUPABASE_SERVICE_KEY` (privada), todas do mesmo Supabase. Preserve as variáveis
@@ -76,6 +76,30 @@ gestores de clientes.
 
 6. Acesse `https://SEU-DOMINIO/` e `https://SEU-DOMINIO/tecnico`. Autorize câmera e
    localização no celular. Envie um relatório com foto e confirme sua leitura no painel.
+
+### Segurança e diagnóstico do host
+
+1. Execute `python3 deploy/server_security_check.py` no host após definir
+   `LINKCE_DOMAIN`. O diagnóstico é somente leitura e grava um JSON sem segredos em
+   `/var/lib/sistema-campo/security/status.json`.
+2. Agende essa execução a cada cinco minutos pelo agendador do sistema. O painel marca
+   o diagnóstico como desatualizado depois de 15 minutos.
+3. Mantenha somente 80/443 públicos. A porta do PostgreSQL/Supabase deve ficar na rede
+   privada; administração deve ocorrer por VPN ou rede explicitamente autorizada.
+4. O container da aplicação já executa com usuário sem root, filesystem somente leitura,
+   capacidades removidas e `no-new-privileges`.
+5. Em Gestão → Servidor próprio, compare as verificações automáticas com o ambiente e
+   registre o checklist. O registro identifica usuário, empresa e data na auditoria.
+
+### Backup completo
+
+Copie `deploy/.backup.env.example` para um arquivo privado fora do Git e configure uma
+conta exclusiva de backup. Guarde a senha em `.pgpass` com permissão `600`, sem senha na
+linha de comando. Use esse ambiente ao executar `deploy/backup_database.sh`. O script
+gera dump comprimido, SHA-256, retenção local e, quando configurado,
+cópia externa por um destino `rclone` já autenticado. Nenhuma senha deve ser salva no Git.
+Registre cada execução em Gestão → Servidor próprio. Um backup só é considerado validado
+depois de uma restauração bem-sucedida em ambiente separado.
 
 O script de primeiro gestor pede a senha no terminal, confirma o vínculo e não redefine
 contas existentes. Se o banco já possuir usuários, use o painel para criar os demais.

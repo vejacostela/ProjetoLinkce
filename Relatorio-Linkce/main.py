@@ -8,6 +8,7 @@ import logging
 import hashlib
 import secrets
 import base64
+from pathlib import Path
 from urllib.parse import urlsplit
 from datetime import date, time, datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -116,6 +117,11 @@ async def enforce_access(request, call_next):
                     raise HTTPException(403, 'Acesso exclusivo do gestor.')
                 if apoio_pode_registrar and role not in ('gestor', 'apoio'):
                     raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+            if path.startswith('/api/servidor'):
+                if role not in ('gestor', 'apoio'):
+                    raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
+                if request.method != 'GET' and role != 'gestor':
+                    raise HTTPException(403, 'Acesso exclusivo do gestor.')
             if path == "/api/saude" and role not in ("gestor", "apoio"):
                 raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
             if path.startswith("/api/empresas") and request.method != "GET" and not eh_admin_plataforma(user):
@@ -132,7 +138,7 @@ async def enforce_access(request, call_next):
                   and role not in ("gestor", "apoio")):
                 raise HTTPException(403, "Acesso não autorizado.")
         except HTTPException as exc:
-            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd','/api/incidentes')) and hasattr(request.state, 'user'):
+            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd','/api/incidentes','/api/servidor')) and hasattr(request.state, 'user'):
                 registrar_auditoria(request, None, 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             for key, value in (exc.headers or {}).items():
@@ -148,7 +154,7 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and (
-        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd','/api/incidentes')) or
+        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd','/api/incidentes','/api/servidor')) or
         (path.startswith('/api/relatorios/') and '/imagens' in path and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
         resultado = 'sucesso' if response.status_code < 400 else ('negado' if response.status_code < 500 else 'erro')
@@ -234,12 +240,16 @@ def classificar_auditoria(request: Request):
         if path.endswith('/detectar'): verbo = 'detectar'
         elif path.endswith('/acao'): verbo = 'responder'
         else: verbo = {'POST':'registrar', 'PATCH':'atualizar'}.get(method, verbo)
+    elif path.startswith('/api/servidor'):
+        categoria, entidade = 'seguranca', 'servidor_proprio'
+        if '/backups' in path: entidade = 'backup_servidor'
+        verbo = 'verificar' if method in ('POST','PUT') else 'consultar'
     elif path.startswith('/api/relatorios'):
         categoria, entidade = 'relatorios', 'imagem' if '/imagens' in path else 'relatorio'
         if path.endswith('/reprocessar'): verbo = 'reprocessar'
         elif entidade == 'imagem': verbo = {'POST':'adicionar', 'PUT':'substituir', 'DELETE':'excluir'}.get(method, verbo)
     entidade_id = None
-    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','relatorios','imagens','reprocessar','limpeza','lgpd','configuracao','solicitacoes','incidentes','detectar','acao'}
+    ignored = {'api','avisos','modelos','historico','empresas','acesso','convite','criar-usuario','seguranca','banco','backup','backups','relatorios','imagens','reprocessar','limpeza','lgpd','configuracao','solicitacoes','incidentes','detectar','acao','servidor','verificacao'}
     for part in reversed(segments):
         if part not in ignored and (re.fullmatch(r'[0-9a-fA-F-]{16,64}', part) or part.isdigit()):
             entidade_id = part[:120]
@@ -446,6 +456,7 @@ AUDIT_SECURITY_AVAILABLE = False
 AUDIT_DETAIL_AVAILABLE = False
 LGPD_AVAILABLE = False
 INCIDENT_RESPONSE_AVAILABLE = False
+SERVER_SECURITY_AVAILABLE = False
 
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCK_MINUTES = 15
@@ -708,7 +719,7 @@ def registrar_falha_login(chave: str, atual=None):
 def init_supabase():
     global supabase_client, TENANT_COLUMN_AVAILABLE, REPORT_STATUS_AVAILABLE
     global NOTICE_TENANT_AVAILABLE, AUDIT_TENANT_AVAILABLE, EMPRESA_TABLE_AVAILABLE
-    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE, LGPD_AVAILABLE, INCIDENT_RESPONSE_AVAILABLE
+    global AUTH_SECURITY_AVAILABLE, API_SECURITY_AVAILABLE, IMAGE_SECURITY_AVAILABLE, AUDIT_SECURITY_AVAILABLE, AUDIT_DETAIL_AVAILABLE, LGPD_AVAILABLE, INCIDENT_RESPONSE_AVAILABLE, SERVER_SECURITY_AVAILABLE
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.warning("⚠️ Supabase não configurado")
         return
@@ -728,6 +739,7 @@ def init_supabase():
             ("auditoria_gestao", "categoria,entidade_tipo,entidade_id,descricao", "AUDIT_DETAIL_AVAILABLE"),
             ("lgpd_configuracao", "empresa_id,politica_versao,retencao_dias", "LGPD_AVAILABLE"),
             ("incidente_eventos", "empresa_id,incidente_id,tipo,metadados", "INCIDENT_RESPONSE_AVAILABLE"),
+            ("servidor_seguranca", "empresa_id,firewall_ativo,restauracao_testada", "SERVER_SECURITY_AVAILABLE"),
         )
         for table_name, fields, flag_name in probes:
             try:
@@ -2003,7 +2015,7 @@ async def pacote_instalacao(request: Request):
         # Somente arquivos versionados de instalação, nunca .env ou dados.
         for folder in ("database", "deploy"):
             for path in sorted((root / folder).rglob("*")):
-                if path.is_file() and (path.suffix in (".sql", ".md", ".py", ".yml") or path.name in ("Dockerfile", "Caddyfile", ".env.example")):
+                if path.is_file() and (path.suffix in (".sql", ".md", ".py", ".yml", ".sh") or path.name in ("Dockerfile", "Caddyfile", ".env.example", ".backup.env.example")):
                     archive.write(path, path.relative_to(root).as_posix())
         archive.writestr("LEIA-ME.txt", "Extraia este pacote na raiz do sistema e siga database/README.md. O SQL instala a estrutura; fotos e dados anteriores exigem migração separada.")
     return StreamingResponse(iter([buffer.getvalue()]), media_type="application/zip",
@@ -2725,6 +2737,128 @@ async def banco_deletar(request: Request):
         raise HTTPException(status_code=503, detail="Não foi possível excluir os registros solicitados.")
 
 
+SERVER_CONTROL_FIELDS = (
+    'firewall_ativo', 'https_valido', 'banco_nao_exposto', 'administracao_restrita',
+    'usuario_sem_admin', 'atualizacoes_controladas', 'monitoramento_ativo',
+    'backup_local', 'backup_externo', 'restauracao_testada',
+)
+
+def _server_runtime_snapshot():
+    """Métricas sem dados sensíveis; no Docker representam o container da aplicação."""
+    disk = os.statvfs('/')
+    total_disk = disk.f_frsize * disk.f_blocks
+    free_disk = disk.f_frsize * disk.f_bavail
+    memory = {}
+    try:
+        for line in Path('/proc/meminfo').read_text(encoding='utf-8').splitlines():
+            key, value = line.split(':', 1)
+            memory[key] = int(value.strip().split()[0]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    total_memory = memory.get('MemTotal')
+    available_memory = memory.get('MemAvailable')
+    try:
+        load = list(os.getloadavg())
+    except (AttributeError, OSError):
+        load = []
+    return {
+        'disco_total_bytes': total_disk,
+        'disco_usado_bytes': total_disk - free_disk,
+        'disco_percentual': round((total_disk - free_disk) * 100 / total_disk, 1) if total_disk else None,
+        'memoria_total_bytes': total_memory,
+        'memoria_usada_bytes': total_memory - available_memory if total_memory and available_memory is not None else None,
+        'memoria_percentual': round((total_memory - available_memory) * 100 / total_memory, 1) if total_memory and available_memory is not None else None,
+        'carga_1_5_15': load,
+    }
+
+def _server_host_report():
+    path = Path(os.getenv('SERVER_SECURITY_REPORT', '/security/status.json'))
+    try:
+        if not path.is_file() or path.stat().st_size > 65536:
+            return {'disponivel': False, 'motivo': 'Diagnóstico do host ainda não executado.'}
+        report = json.loads(path.read_text(encoding='utf-8'))
+        generated = datetime.fromisoformat(str(report.get('generated_at', '')).replace('Z', '+00:00'))
+        delta = (datetime.now(timezone.utc) - generated).total_seconds()
+        if delta < -300:
+            raise ValueError('Data futura no diagnóstico')
+        age = max(0, int(delta))
+        allowed = {'generated_at','hostname','firewall_active','firewall_provider','https_valid',
+                   'certificate_expires_at','database_not_public','effective_uid','non_root_user','schema'}
+        clean = {key: report.get(key) for key in allowed}
+        clean.update({'disponivel': True, 'idade_segundos': age, 'atualizado': age <= 900})
+        return clean
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {'disponivel': False, 'motivo': 'Diagnóstico do host inválido.'}
+
+def _exigir_seguranca_servidor():
+    if not supabase_client or not SERVER_SECURITY_AVAILABLE:
+        raise HTTPException(503, 'Segurança do servidor indisponível. Execute a migração 017 no banco.')
+
+@app.get('/api/servidor/seguranca')
+async def consultar_seguranca_servidor(request: Request):
+    _exigir_seguranca_servidor()
+    empresa_id = request.state.empresa_id
+    config = (supabase_client.table('servidor_seguranca').select('*')
+              .eq('empresa_id', empresa_id).limit(1).execute().data or [])
+    backups = (supabase_client.table('servidor_backup_execucoes').select('*')
+               .eq('empresa_id', empresa_id).order('executado_em', desc=True).limit(20).execute().data or [])
+    controls = config[0] if config else {'empresa_id': empresa_id, **{field: False for field in SERVER_CONTROL_FIELDS}}
+    completed = sum(controls.get(field) is True for field in SERVER_CONTROL_FIELDS)
+    return {
+        'modo': os.getenv('LINKCE_DEPLOYMENT_MODE', 'cloud'),
+        'controles': controls,
+        'conformidade': {'concluidos': completed, 'total': len(SERVER_CONTROL_FIELDS),
+                         'percentual': round(completed * 100 / len(SERVER_CONTROL_FIELDS))},
+        'host': _server_host_report(), 'recursos': _server_runtime_snapshot(), 'backups': backups,
+    }
+
+@app.put('/api/servidor/seguranca')
+async def salvar_seguranca_servidor(request: Request):
+    _exigir_seguranca_servidor()
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(422, 'Conteúdo da verificação inválido.')
+    confirmation = str(data.pop('confirmacao', '')).strip()
+    if confirmation != 'VERIFICADO':
+        raise HTTPException(422, 'Digite VERIFICADO para registrar a conferência dos controles.')
+    if any(field not in data or type(data[field]) is not bool for field in SERVER_CONTROL_FIELDS):
+        raise HTTPException(422, 'Informe todos os controles como verdadeiro ou falso.')
+    observations = str(data.get('observacoes') or '').strip()
+    if len(observations) > 3000:
+        raise HTTPException(422, 'As observações devem ter até 3000 caracteres.')
+    user = request.state.user
+    payload = {'empresa_id': request.state.empresa_id, **{field: data[field] for field in SERVER_CONTROL_FIELDS},
+               'observacoes': observations, 'verificado_por': user['id'],
+               'verificado_email': user.get('email'), 'verificado_em': datetime.now(timezone.utc).isoformat(),
+               'atualizado_em': datetime.now(timezone.utc).isoformat()}
+    result = supabase_client.table('servidor_seguranca').upsert(payload, on_conflict='empresa_id').execute()
+    return {'mensagem': 'Verificação de segurança registrada e auditada.', 'controles': result.data[0]}
+
+@app.post('/api/servidor/backups')
+async def registrar_backup_servidor(request: Request):
+    _exigir_seguranca_servidor()
+    data = await request.json()
+    if not isinstance(data, dict):
+        raise HTTPException(422, 'Conteúdo do registro de backup inválido.')
+    tipo, status = str(data.get('tipo') or ''), str(data.get('status') or '')
+    if tipo not in ('local','externo','restauracao') or status not in ('sucesso','falha'):
+        raise HTTPException(422, 'Tipo ou resultado do backup inválido.')
+    checksum = str(data.get('checksum_sha256') or '').lower().strip() or None
+    if checksum and not re.fullmatch(r'[a-f0-9]{64}', checksum):
+        raise HTTPException(422, 'Checksum SHA-256 inválido.')
+    reference, details = str(data.get('referencia') or '').strip(), str(data.get('detalhes') or '').strip()
+    if len(reference) > 500 or len(details) > 2000:
+        raise HTTPException(422, 'Referência ou detalhes acima do limite.')
+    size = data.get('tamanho_bytes')
+    if size is not None and (type(size) is not int or size < 0):
+        raise HTTPException(422, 'Tamanho do backup inválido.')
+    user = request.state.user
+    payload = {'empresa_id': request.state.empresa_id, 'tipo': tipo, 'status': status,
+               'referencia': reference, 'tamanho_bytes': size, 'checksum_sha256': checksum,
+               'detalhes': details, 'executado_por': user['id'], 'executado_email': user.get('email')}
+    result = supabase_client.table('servidor_backup_execucoes').insert(payload).execute()
+    return {'mensagem': 'Execução registrada no histórico imutável.', 'backup': result.data[0]}
+
 @app.get("/health")
 async def health_check():
     inicio = datetime.now(timezone.utc)
@@ -2756,6 +2890,7 @@ async def health_check():
             "auditoria_detalhada": AUDIT_DETAIL_AVAILABLE,
             "lgpd_operacional": LGPD_AVAILABLE,
             "resposta_incidentes": INCIDENT_RESPONSE_AVAILABLE,
+            "seguranca_servidor": SERVER_SECURITY_AVAILABLE,
         },
     }
 
@@ -2776,6 +2911,7 @@ async def saude_detalhada(request: Request):
             "auditoria_seguranca": AUDIT_SECURITY_AVAILABLE,
             "lgpd_operacional": LGPD_AVAILABLE,
             "resposta_incidentes": INCIDENT_RESPONSE_AVAILABLE,
+            "seguranca_servidor": SERVER_SECURITY_AVAILABLE,
         },
         "permissoes": permissoes_para(role_of(getattr(request.state, "user", {}) or {})),
     })
