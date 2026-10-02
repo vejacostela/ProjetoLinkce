@@ -84,6 +84,41 @@ class TenantTests(unittest.TestCase):
         response = self.client.get('/api/empresas', headers={'X-Empresa-ID': B})
         self.assertEqual([row['id'] for row in response.json()['empresas']], [A])
 
+    def test_bootstrap_returns_authorized_identity_company_and_permissions(self):
+        response = self.client.get('/api/bootstrap')
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['usuario']['id'], USER['id'])
+        self.assertNotIn('app_metadata', data['usuario'])
+        self.assertEqual(data['empresa_id'], A)
+        self.assertEqual([row['id'] for row in data['empresas']], [A])
+        self.assertEqual(data['permissoes']['role'], 'gestor')
+
+    def test_bootstrap_ignores_stale_company_from_another_tenant(self):
+        response = self.client.get('/api/bootstrap', headers={'X-Empresa-ID': B})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['empresa_id'], A)
+        self.assertEqual([row['id'] for row in response.json()['empresas']], [A])
+
+    def test_bootstrap_selects_authorized_company_and_its_role(self):
+        self.db.rows['usuarios_empresas'].append({
+            'usuario_id': USER['id'], 'empresa_id': B, 'papel': 'tecnico', 'ativo': True,
+        })
+        response = self.client.get('/api/bootstrap', headers={'X-Empresa-ID': B})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data['empresa_id'], B)
+        self.assertEqual(data['permissoes']['role'], 'tecnico')
+        self.assertEqual({row['id'] for row in data['empresas']}, {A, B})
+
+    def test_bootstrap_rejects_blocked_selected_company(self):
+        self.db.rows['usuarios_empresas'].append({
+            'usuario_id': USER['id'], 'empresa_id': B, 'papel': 'gestor', 'ativo': True,
+        })
+        self.db.rows['empresas'][1]['bloqueada'] = True
+        response = self.client.get('/api/bootstrap', headers={'X-Empresa-ID': B})
+        self.assertEqual(response.status_code, 423)
+
     def test_client_manager_cannot_manage_the_platform(self):
         permissions = self.client.get('/api/permissoes').json()
         self.assertFalse(permissions['admin_plataforma'])

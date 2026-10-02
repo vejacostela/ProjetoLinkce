@@ -87,7 +87,7 @@ async def enforce_access(request, call_next):
             metadata = user.get('app_metadata') or {}
             if metadata.get('onboarding_required') is True and not path.startswith('/api/primeiro-acesso'):
                 raise HTTPException(428, 'Conclua seu primeiro acesso: senha e aviso de privacidade.')
-            requested_empresa = None if path == '/api/empresas' and request.method == 'GET' else request.headers.get("X-Empresa-ID")
+            requested_empresa = None if path in ('/api/empresas', '/api/bootstrap') and request.method == 'GET' else request.headers.get("X-Empresa-ID")
             request.state.empresa_id = empresa_id_do_usuario(user, requested_empresa)
             validar_sessao_servidor(request, user)
             aplicar_limite_api(request, user, request.state.empresa_id)
@@ -1361,6 +1361,29 @@ async def obter_permissoes(request: Request):
     user = getattr(request.state, "user", {}) or {}
     return permissoes_para(role_of(user), user)
 
+@app.get("/api/bootstrap")
+async def iniciar_painel(request: Request):
+    """Entrega identidade, empresa autorizada e permissões em uma chamada autenticada."""
+    user = request.state.user
+    empresas = _empresas_do_usuario(user)
+    if not empresas:
+        raise HTTPException(403, "Seu usuário não tem acesso ativo a nenhuma empresa.")
+    requested = request.headers.get("X-Empresa-ID")
+    ids = {str(empresa["id"]) for empresa in empresas}
+    active = request.state.empresa_id
+    if requested and requested in ids and requested != active:
+        # A lista não substitui a autorização: valide novamente o vínculo,
+        # papel e eventual bloqueio da empresa selecionada.
+        active = empresa_id_do_usuario(user, requested)
+    request.state.empresa_id = active
+    return {
+        "usuario": {"id": user["id"], "email": user.get("email", ""),
+                    "user_metadata": {"nome": (user.get("user_metadata") or {}).get("nome", "")}},
+        "empresa_id": active,
+        "empresas": empresas,
+        "permissoes": permissoes_para(role_of(user), user),
+    }
+
 @app.post("/api/relatorios/{relatorio_id}/reprocessar")
 async def reprocessar_relatorio(relatorio_id: UUID, request: Request):
     if not supabase_client:
@@ -1394,17 +1417,20 @@ async def reprocessar_relatorio(relatorio_id: UUID, request: Request):
 
 @app.get("/api/empresas")
 async def listar_empresas(request: Request):
+    return {"empresas": _empresas_do_usuario(request.state.user)}
+
+def _empresas_do_usuario(user):
     if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
-        return {"empresas": [{"id": DEFAULT_EMPRESA_ID, "nome": "Empresa principal", "slug": "principal", "ativo": True}]}
+        return [{"id": DEFAULT_EMPRESA_ID, "nome": "Empresa principal", "slug": "principal", "ativo": True}]
     try:
         memberships = (supabase_client.table("usuarios_empresas").select("empresa_id")
-                       .eq("usuario_id", request.state.user["id"]).eq("ativo", True).execute().data or [])
+                       .eq("usuario_id", user["id"]).eq("ativo", True).execute().data or [])
         ids = [item["empresa_id"] for item in memberships]
         if not ids:
-            return {"empresas": []}
+            return []
         result = (supabase_client.table("empresas").select("*").in_("id", ids)
                   .eq("ativo", True).order("nome").execute())
-        return {"empresas": result.data or []}
+        return result.data or []
     except Exception:
         raise HTTPException(503, "Não foi possível consultar suas empresas.")
 

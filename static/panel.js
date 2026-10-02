@@ -319,7 +319,15 @@ async function loadEmpresas() {
   if (!select) return;
   try {
     const data = await api('/api/empresas');
-    const empresas = Array.isArray(data.empresas) ? data.empresas : [];
+    renderEmpresas(data.empresas);
+  } catch (error) {
+    select.hidden = true;
+    mostrarAlertaOperacao('Não foi possível carregar as empresas: ' + error.message);
+  }
+}
+function renderEmpresas(items, activeId = '') {
+    const select = $('companySelect');
+    const empresas = Array.isArray(items) ? items : [];
     const list = $('companyList');
     if (list) {
       list.replaceChildren();
@@ -367,7 +375,7 @@ async function loadEmpresas() {
     }
     if (!empresas.length) { select.hidden = true; return; }
     const saved = localStorage.getItem('linkce-empresa-id');
-    const active = empresas.find(item => item.id === saved) || empresas[0];
+    const active = empresas.find(item => item.id === activeId) || empresas.find(item => item.id === saved) || empresas[0];
     select.value = active.id;
     if (saved !== active.id) localStorage.setItem('linkce-empresa-id', active.id);
     applyBrand(active);
@@ -380,10 +388,6 @@ async function loadEmpresas() {
         location.reload();
       });
     }
-  } catch (error) {
-    select.hidden = true;
-    mostrarAlertaOperacao('Não foi possível carregar as empresas: ' + error.message);
-  }
 }
 if ($('downloadInstaller')) $('downloadInstaller').addEventListener('click', () => baixarArquivoAutenticado('/api/empresas/pacote-instalacao', 'sistema-instalacao.zip'));
 async function abrirSaudeDetalhada() {
@@ -510,13 +514,16 @@ async function openIncident(id) {
   try {const data=await api('/api/incidentes/'+encodeURIComponent(id));if(activeIncidentId!==id)return;activeIncident=data.incidente;$('incidentDetail').hidden=false;$('incidentDetailTitle').textContent=(activeIncident.codigo||'Incidente')+' · '+(activeIncident.titulo||'');renderIncidentChecklist(activeIncident);lgpdSet('incidentContainment',activeIncident.medidas);lgpdSet('incidentRootCause',activeIncident.causa_raiz);lgpdSet('incidentCorrection',activeIncident.correcao);lgpdSet('incidentRisk',activeIncident.avaliacao_risco==='risco_relevante'?'risco_relevante':'sem_risco_relevante');$('incidentNotifyOwners').checked=Boolean(activeIncident.comunicado_responsaveis);$('incidentNotifyAnpd').checked=Boolean(activeIncident.comunicar_anpd);$('incidentNotifyHolders').checked=Boolean(activeIncident.comunicar_titulares);const timeline=$('incidentTimeline');timeline.replaceChildren();for(const event of (data.eventos||[])){const card=document.createElement('article');const title=document.createElement('strong');title.textContent=event.tipo.replaceAll('_',' ')+' · '+dateLabel(event.criado_em);const text=document.createElement('p');text.textContent=event.descricao;const author=document.createElement('span');author.textContent=event.usuario_email||'Sistema';card.append(title,text,author);timeline.append(card);}const canManage=currentUser?.app_metadata?.role==='gestor';$('incidentDetail').querySelectorAll('form input,form textarea,form select,form button,#preserveIncidentLogs,#revokeIncidentUser,#revokeIncidentCompany,#confirmKeyRotation,#finishIncident').forEach(node=>node.disabled=!canManage);$('blockIncidentCompany').hidden=!currentUser?.app_metadata?.platform_admin;$('incidentStatus').textContent='';}catch(error){$('incidentStatus').textContent=error.message;}
 }
 async function incidentAction(acao,payload={}) {if(!activeIncidentId)return;try{const data=await api('/api/incidentes/'+encodeURIComponent(activeIncidentId)+'/acao',{method:'POST',body:JSON.stringify({acao,...payload})});$('incidentStatus').textContent=data.mensagem||'Ação registrada.';await openIncident(activeIncidentId);await loadIncidents();}catch(error){$('incidentStatus').textContent=error.message;}}
-async function enter(user) {
-  await loadEmpresas();
-  const permissions = await api('/api/permissoes');
+async function enter() {
+  const bootstrap = await api('/api/bootstrap');
+  const user = bootstrap.usuario;
+  const permissions = bootstrap.permissoes;
   const role = permissions.role;
   if (role === 'tecnico') { window.location.assign('/tecnico'); return; }
   if (!['gestor','apoio'].includes(role)) { signedOut('Seu perfil é técnico. Acesse a Área do técnico no topo da página.'); return; }
-  currentUser = {...user, app_metadata:{...user.app_metadata, role, platform_admin: Boolean(permissions.admin_plataforma)}}; startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
+  currentUser = {...user, app_metadata:{role, platform_admin: Boolean(permissions.admin_plataforma)}};
+  renderEmpresas(bootstrap.empresas, bootstrap.empresa_id);
+  startSessionGuard(); startHealthMonitor(); $('login').hidden = true; $('workspace').hidden = false;
   $('logout').hidden = false; $('managementButton').hidden = false;
   document.querySelectorAll('[data-management-target]').forEach(b => {
     const target = b.dataset.managementTarget;
@@ -783,12 +790,16 @@ $('imagesForm').addEventListener('submit',async event=>{
 });
 $('loginForm').addEventListener('submit',async e=>{
   e.preventDefault(); const wait=loginGuard(); if(wait){$('loginStatus').textContent='Muitas tentativas. Aguarde '+wait+' minuto(s) e tente novamente.'; return;} $('loginButton').disabled=true; $('loginStatus').textContent='Entrando...';
+  let authenticated = false;
   try {
     if(!client) throw new Error('config');
     const {data,error}=await client.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
-    if(error) throw error; if(!data.user) throw new Error('session');
-    clearLoginFailures(); $('password').value=''; await enter(data.user);
-  }catch(error){recordLoginFailure();$('loginStatus').textContent=authMessage(error);}finally{$('loginButton').disabled=false;}
+    if(error) { if(error.code==='invalid_credentials'||error.status===429) recordLoginFailure(); throw error; }
+    if(!data.user) throw new Error('session');
+    authenticated = true;
+    clearLoginFailures(); $('password').value=''; $('loginStatus').textContent='Preparando seu ambiente...';
+    await enter();
+  }catch(error){$('loginStatus').textContent=authenticated ? (error.message || 'Não foi possível carregar seu ambiente.') : authMessage(error);}finally{$('loginButton').disabled=false;}
 });
 $('userForm').addEventListener('submit',async e=>{
   e.preventDefault(); const userId=currentUser?.id; $('saveUser').disabled=true; $('userStatus').textContent='Criando conta...';
@@ -808,8 +819,9 @@ $('userForm').addEventListener('submit',async e=>{
     if(typeof createClient!=='function') throw new Error('auth-client');
     client=createClient(config.supabase_url,config.supabase_key,{auth:{storageKey:'linkce-management-auth'}});
     client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT')signedOut('Sessão encerrada.');});
-    const {data,error}=await client.auth.getUser();
-    if(data?.user && !error) await enter(data.user); else $('loginStatus').textContent='';
+    const {data,error}=await client.auth.getSession();
+    if(error) throw error;
+    if(data?.session) await enter(); else $('loginStatus').textContent='';
   }catch(error){
     console.error('[Sistema de Campo] falha ao iniciar autenticação',error);
     // Se o cliente já foi criado, o login continua disponível mesmo que a
