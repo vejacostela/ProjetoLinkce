@@ -129,3 +129,21 @@ test('empty notices do not open a dialog and an explicit release unlocks the for
     await notices.check(); assert.equal(dialog.open,false); assert.equal(h.get('mainApp').inert,false);
   } finally { notices.close(); }
 });
+
+test('safe PWA update tolerates browser activation during the offline queue check', async () => {
+  const html = fs.readFileSync(path.join(ROOT,'Relatorio-Linkce/index.html'),'utf8');
+  const start = html.indexOf('  async function applySafeUpdate(reg)');
+  const end = html.indexOf('  navigator.serviceWorker.register',start);
+  assert.ok(start > 0 && end > start);
+  const h = environment();
+  h.get('formRelatorio').querySelector=()=>null;
+  let finish, messages=0;
+  const reg = {waiting:{postMessage:()=>{messages++;}}};
+  Object.assign(h.context,{evidenceFiles:[],materiaisUtilizados:[],materiaisRecolhidos:[],
+    pendingOfflineItems:()=>new Promise(resolve=>{finish=resolve;}),mostrarToastSistema(){},reg});
+  vm.runInContext('let updateApplied=false;\n' + html.slice(start,end),h.context);
+  const pending = vm.runInContext('applySafeUpdate(reg)',h.context);
+  reg.waiting=null; finish(0);
+  await pending; assert.equal(messages,0);
+  assert.equal(vm.runInContext('updateApplied',h.context),false);
+});

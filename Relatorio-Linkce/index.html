@@ -1983,7 +1983,8 @@ if ('serviceWorker' in navigator) {
     });
   }
   async function applySafeUpdate(reg) {
-    if (!reg.waiting || updateApplied) return;
+    const waiting = reg.waiting;
+    if (!waiting || updateApplied) return;
     const form = document.getElementById('formRelatorio');
     const hasDraft = evidenceFiles.length || materiaisUtilizados.length || materiaisRecolhidos.length
       || Array.from(form.querySelectorAll('textarea, input[name="maior_sinal"]')).some(field=>field.value.trim())
@@ -1994,12 +1995,14 @@ if ('serviceWorker' in navigator) {
       return;
     }
     const pending = await pendingOfflineItems();
+    // The browser can activate a first installation during the async queue check.
+    if (reg.waiting !== waiting) return;
     if (pending > 0) {
       mostrarToastSistema('Nova atualização pronta. Ela será aplicada após sincronizar os itens pendentes.');
       return;
     }
     updateApplied = true;
-    reg.waiting.postMessage({type:'SKIP_WAITING'});
+    waiting.postMessage({type:'SKIP_WAITING'});
   }
   navigator.serviceWorker.register('/sw.js', { scope: '/tecnico', updateViaCache: 'none' })
     .then(reg => {
