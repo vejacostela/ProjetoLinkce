@@ -1,0 +1,37 @@
+.filters .date-range-field{grid-column:span 2;min-width:0}
+.date-range-label{display:block;font-size:12px;font-weight:600;margin-bottom:6px}
+#dateRangeButton{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;background:var(--surface);color:var(--text);text-align:left;padding:10px 12px;border:1px solid var(--line)}
+.range-value{display:flex;flex-direction:column;gap:2px;font-variant-numeric:tabular-nums}
+.range-value small{color:var(--muted);font-size:11px;font-weight:500}
+.range-value strong{font-size:14px;font-weight:600}
+.range-separator{color:var(--muted)}
+dialog#dateRangeDialog{color-scheme:light;width:min(680px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 32px);padding:18px;margin:auto;overflow:auto;background:#fff;color:#243b53;border:1px solid #dbe4ed;border-radius:14px;box-shadow:0 24px 80px #10203030}
+#dateRangeDialog::backdrop{background:#10203070}
+.range-header,.range-footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.range-header h2{font-size:17px;margin:0}
+#dateRangeDialog button{background:#fff;color:#244563;border:1px solid #dbe4ed;border-radius:7px;min-height:44px;padding:8px 12px}
+#dateRangeDialog button:hover{background:#eef5fd;border-color:#2167ae}
+#dateRangeDialog button:focus-visible{outline:2px solid #2167ae;outline-offset:2px}
+.range-navigation{display:flex;justify-content:space-between;margin-top:14px}
+#dateRangeMonths{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.range-month{min-width:0}
+.range-month h3{text-align:center;font-size:14px;text-transform:capitalize;margin:-36px 44px 18px;min-height:22px}
+.range-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}
+.range-weekday{text-align:center;font-size:11px;color:#64748b;padding:6px 0}
+#dateRangeDialog .range-day{border:0;padding:0;min-width:0;min-height:40px;font-size:13px;border-radius:5px;font-variant-numeric:tabular-nums}
+#dateRangeDialog .range-day.weekend{color:#2167ae}
+#dateRangeDialog .range-day.outside{color:#adb6c2}
+#dateRangeDialog .range-day.in-range{background:#e2edfb;color:#174e8c;border-radius:0}
+#dateRangeDialog .range-day.selected{background:#195896;color:#fff;font-weight:700}
+#dateRangeDialog .range-day[aria-current=date]{box-shadow:inset 0 0 0 1px #2167ae}
+#dateRangeHint{font-size:13px;min-height:20px;margin:14px 0;color:#526779}
+.range-footer{border-top:1px solid #e3eaf1;padding-top:12px}
+#dateRangeDialog #dateRangeConfirm{background:#195896;color:#fff;border-color:#195896;flex:1;font-weight:600}
+@media(max-width:580px){
+ dialog#dateRangeDialog{padding:14px}
+ #dateRangeMonths{grid-template-columns:1fr;gap:20px}
+ .range-month h3{margin:0 48px 10px}
+ .range-month:first-child h3{margin-top:-36px;margin-bottom:18px}
+ #dateRangeDialog .range-day{min-height:40px}
+ .range-header h2{font-size:16px}
+}

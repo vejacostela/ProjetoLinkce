@@ -1,5 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
+const dateRangePicker = window.CampoDateRange?.install(document);
 let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVersion = 0, activeReportId = null;
 let healthMonitor = null, reportsRefresh = null, reportsAbort = null;
 let reportSignature = '', summarySignature = '';
@@ -45,6 +46,7 @@ function defaultDates() {
   $('end').value = `${part('year')}-${part('month')}-${part('day')}`;
   $('start').value = `${part('year')}-${part('month')}-01`;
   $('technician').value = '';
+  dateRangePicker?.sync();
 }
 function clearResults() {
   $('rows').replaceChildren(); markers?.clearLayers();
@@ -64,6 +66,7 @@ function applyBrand(empresa) {
   document.title = title;
 }
 function signedOut(message = '') {
+  dateRangePicker?.close();
   currentUser = null; requestVersion++; detailVersion++;
   currentReports = [];
   healthMonitor?.stop(); reportsRefresh?.stop(); reportsAbort?.abort();
@@ -609,6 +612,8 @@ async function enter() {
   startReportsRefresh();
 }
 function applyFilters() {
+  dateRangePicker?.sync();
+  if (!$('start').value || !$('end').value) { $('status').textContent = 'Selecione a data inicial e a data final.'; return; }
   if ($('start').value > $('end').value) { $('status').textContent = 'A data inicial deve ser anterior ou igual à final.'; return; }
   activeFilters = {inicio:$('start').value,fim:$('end').value};
   if ($('technician').value.trim()) activeFilters.tecnico = $('technician').value.trim();
