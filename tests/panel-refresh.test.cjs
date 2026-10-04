@@ -18,7 +18,7 @@ class Element {
   showModal() { this.open = true; }
   reset() {}
 }
-function environment() {
+function environment(fetchImpl) {
   const elements = new Map();
   const get = id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id); };
   const storage = new Map();
@@ -32,14 +32,14 @@ function environment() {
     localStorage:{getItem:key=>storage.get(key) || null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
     setTimeout,clearTimeout,setInterval,clearInterval,AbortController,Headers,FormData,URLSearchParams,Intl,Date,Promise,
     location:{replace(){},reload(){}},
-    fetch:()=>new Promise(()=>{}), // Hold the login initializer; tests set an authorized fixture.
+    fetch:fetchImpl || (()=>new Promise(()=>{})), // Hold the login initializer; tests set an authorized fixture.
   });
   vm.runInContext(fs.readFileSync(path.join(ROOT,'Relatorio-Linkce/static/adaptive-refresh.js'),'utf8'), context);
   context.CampoRefresh = window.CampoRefresh;
   return {get,document,context,window};
 }
-function panel() {
-  const h = environment();
+function panel(fetchImpl) {
+  const h = environment(fetchImpl);
   vm.runInContext(fs.readFileSync(path.join(ROOT,'static/panel.js'),'utf8'), h.context);
   vm.runInContext("currentUser={id:'fixture-user',email:'fixture@example.invalid'}", h.context);
   return h;
@@ -47,6 +47,32 @@ function panel() {
 const data = id => ({relatorios:[{id,tecnico:'Técnico de teste',criado_em:'2026-10-04T12:00:00Z',equipamento_status:'Cabeado',imagens_count:2}],total:1,has_more:false});
 const summary = {total:12,tecnicos:3,por_tecnico:[],por_dia:[],alertas:[]};
 function setApi(h, fn) { h.context.testApi = fn; vm.runInContext('api=testApi',h.context); }
+
+test('reload keeps login hidden while restoring the saved session and opening the workspace',async()=>{
+  let configReady,sessionReady,environmentReady;
+  const h=panel(()=>new Promise(resolve=>{configReady=resolve;}));
+  vm.runInContext('currentUser=null',h.context);
+  h.window.supabase={createClient:()=>({auth:{onAuthStateChange(){},getSession:()=>new Promise(resolve=>{sessionReady=resolve;})}})};
+  h.context.enterFixture=()=>new Promise(resolve=>{environmentReady=()=>{vm.runInContext("currentUser={id:'restored'}",h.context);h.get('workspace').hidden=false;resolve();};});
+  vm.runInContext('enter=enterFixture',h.context);
+  assert.equal(h.get('login').hidden,true);assert.equal(h.get('authStartup').hidden,false);
+  configReady({ok:true,json:async()=>({supabase_url:'https://example.invalid',supabase_key:'test'})});
+  await new Promise(resolve=>setImmediate(resolve));
+  sessionReady({data:{session:{user:{id:'restored'}}},error:null});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.get('login').hidden,true);assert.equal(h.get('authStartup').hidden,false);
+  environmentReady();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.get('login').hidden,true);assert.equal(h.get('authStartup').hidden,true);assert.equal(h.get('workspace').hidden,false);
+});
+
+test('without a saved session the startup finishes and presents the login form',async()=>{
+  let configReady;const h=panel(()=>new Promise(resolve=>{configReady=resolve;}));
+  vm.runInContext('currentUser=null',h.context);
+  h.window.supabase={createClient:()=>({auth:{onAuthStateChange(){},getSession:async()=>({data:{session:null},error:null})}})};
+  assert.equal(h.get('login').hidden,true);
+  configReady({ok:true,json:async()=>({})});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.get('authStartup').hidden,true);assert.equal(h.get('login').hidden,false);assert.equal(h.get('loginButton').disabled,false);
+});
 
 test('updating and failed reads preserve rows; unchanged reads do not rebuild them', async () => {
   const h = panel();

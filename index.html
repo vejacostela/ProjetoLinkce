@@ -186,7 +186,7 @@
 <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script defer src="/static/adaptive-refresh.js?v=1"></script>
 <script defer src="/panel-assets/date-range.js?v=1"></script>
-<script defer src="/panel-assets/panel.js?v=14"></script>
+<script defer src="/panel-assets/panel.js?v=15"></script>
 <script defer src="/panel-assets/notices-admin.js?v=3"></script>
 <link rel="stylesheet" href="/panel-assets/design-system.css?v=2">
 <link rel="stylesheet" href="/panel-assets/date-range.css?v=1">
@@ -195,7 +195,8 @@
 <body class="management-app">
 <header><a class="brand" href="/"><strong id="brandName">Sistema de Campo</strong><span id="brandTagline">Gestão operacional</span></a><nav aria-label="Navegação"><a href="/tecnico" target="_blank" rel="noopener">Área do técnico ↗</a><button id="managementButton" hidden>Gestão</button><button id="logout" hidden>Sair</button></nav></header>
 <main>
-<section id="login" class="login surface">
+<section id="authStartup" class="login surface" role="status" aria-live="polite" aria-busy="true"><p class="muted">Verificando seu acesso…</p></section>
+<section id="login" class="login surface" hidden>
 <form id="loginForm"><label>Email<input id="email" type="email" autocomplete="username" required></label><label>Senha<input id="password" type="password" autocomplete="current-password" required></label><button class="primary" id="loginButton">Entrar</button></form>
 <p id="loginStatus" role="status" aria-live="polite">Conectando...</p><a href="/recuperar-senha">Esqueci minha senha</a>
 </section>

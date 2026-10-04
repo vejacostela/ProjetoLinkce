@@ -889,6 +889,8 @@ $('userForm').addEventListener('submit',async e=>{
   }catch(error){if(currentUser?.id===userId)$('userStatus').textContent=error.message;}finally{$('saveUser').disabled=false;}
 });
 (async()=>{
+  $('login').hidden=true;
+  $('authStartup').hidden=false;
   $('loginButton').disabled=true;
   try {
     const response=await fetch('/api/config',{cache:'no-store'}); if(!response.ok) throw new Error('config');
@@ -899,15 +901,23 @@ $('userForm').addEventListener('submit',async e=>{
     client.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT')signedOut('Sessão encerrada.');});
     const {data,error}=await client.auth.getSession();
     if(error) throw error;
-    if(data?.session) await enter(); else $('loginStatus').textContent='';
+    if(data?.session) {
+      $('authStartup').querySelector('p').textContent='Restaurando seu ambiente…';
+      await enter();
+    } else $('loginStatus').textContent='';
   }catch(error){
     console.error('[Sistema de Campo] falha ao iniciar autenticação',error);
     // Se o cliente já foi criado, o login continua disponível mesmo que a
     // consulta inicial da sessão falhe ou seja interrompida pelo navegador.
     $('loginStatus').textContent=client
-      ? ''
+      ? 'Não foi possível restaurar seu acesso. Recarregue a página para tentar novamente.'
       : 'Não foi possível conectar ao serviço. Recarregue a página e tente novamente.';
-  }finally{$('loginButton').disabled=false;}
+  }finally{
+    $('authStartup').hidden=true;
+    $('authStartup').setAttribute('aria-busy','false');
+    $('login').hidden=Boolean(currentUser);
+    $('loginButton').disabled=false;
+  }
 })();
 
 let bankPreview = null, bankVersion = 0, deletingBank = false;
