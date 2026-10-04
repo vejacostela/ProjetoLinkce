@@ -253,3 +253,120 @@ pre,.health-details,.notice-history-item,.report-image { background:#f4f7f9; col
   .management-app main { padding:0; }
   body,.surface,td,th { background:white!important; color:black!important; box-shadow:none!important; }
 }
+
+/* Responsive sizing shared by management and field capture. */
+html { scrollbar-gutter:stable; }
+body.management-app,body.technical-app { overflow-wrap:anywhere; }
+.management-app main,.technical-app .container { min-width:0; }
+.management-app main { padding-left:max(16px,env(safe-area-inset-left)); padding-right:max(16px,env(safe-area-inset-right)); }
+.management-app .heading>div { min-width:0; }
+.heading-actions .refresh-control { display:grid; gap:3px; font-size:11px; font-weight:500; }
+.heading-actions .refresh-control select { width:100%; max-width:none; min-width:140px; min-height:44px; font-size:13px; }
+.heading-actions .refresh-state { flex-basis:100%; text-align:right; color:var(--muted); font-size:11px; }
+.refresh-state[data-state=offline],.refresh-state[data-state=retrying] { color:#94520a; }
+.heading-actions #refresh { align-self:end; min-height:44px; }
+.metrics { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.metrics article:first-child { grid-column:auto; }
+.metrics span { min-height:0; }
+.metrics strong { font-size:clamp(24px,2.3vw,32px); }
+.results .table-scroll { max-height:min(68dvh,760px); overscroll-behavior:contain; scrollbar-width:thin; }
+.results thead th { position:sticky; top:0; z-index:1; }
+.map-panel { height:clamp(440px,68dvh,800px); min-height:0; }
+.map-panel #map { min-height:220px; }
+.table-scroll { max-width:100%; overscroll-behavior-x:contain; }
+dialog,#managementDialog { width:min(800px,calc(100% - 32px)); max-height:calc(100dvh - 32px); overscroll-behavior:contain; }
+.dialog-head { position:sticky; top:-24px; z-index:2; background:var(--surface); padding-top:8px; padding-bottom:12px; }
+.dialog-head .icon-close { min-width:44px; min-height:44px; }
+dialog input,dialog select,dialog textarea { max-width:100%; }
+.dialog-actions { flex-wrap:wrap; }
+.management-cards button { min-width:0; }
+.company-list p { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; }
+.company-list button { font-size:12px; min-height:44px; }
+.technical-app .container { padding-top:calc(var(--app-header-height,64px) + 24px); padding-bottom:calc(var(--sync-banner-height,0px) + 40px + env(safe-area-inset-bottom)); }
+.technical-app .user-header { padding-top:max(12px,env(safe-area-inset-top)); padding-left:max(16px,env(safe-area-inset-left)); padding-right:max(16px,env(safe-area-inset-right)); }
+.technical-app .user-header-info { flex:1; }
+.technical-app #btnInstalar { bottom:calc(var(--sync-banner-height,0px) + 18px + env(safe-area-inset-bottom))!important; }
+.technical-app:has(#offlineBanner[style*="flex"]) .container { padding-bottom:calc(var(--sync-banner-height,80px) + 40px + env(safe-area-inset-bottom)); }
+.technical-app:has(#offlineBanner[style*="flex"]) #btnInstalar { bottom:calc(var(--sync-banner-height,80px) + 18px + env(safe-area-inset-bottom))!important; }
+.technical-app .report-heading .card-title { font-size:clamp(25px,3vw,34px); }
+.technical-app .report-section { padding:clamp(16px,2vw,24px); }
+.technical-app .evidence-preview { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:8px; max-height:320px; }
+.technical-app .evidence-item { width:100%; height:auto; aspect-ratio:1; }
+.technical-app .radio-label,.technical-app .evidence-actions button,.technical-app .checklist-label { min-height:44px; }
+.technical-app .login-screen { min-height:100dvh; }
+.technical-app .operation-notice { width:min(480px,calc(100% - 24px)); max-height:calc(100dvh - 24px); }
+@media(min-width:1001px) {
+  .management-app main { padding-left:24px; padding-right:24px; }
+  .heading-actions { align-items:end; }
+}
+@media(max-width:1000px) {
+  .heading { flex-direction:column; }
+  .heading-actions { width:100%; max-width:none; justify-content:flex-start; }
+  .heading-actions #status,.heading-actions .refresh-state { text-align:left; }
+  .map-panel { height:clamp(340px,54dvh,520px); }
+}
+@media(max-width:760px) {
+  .management-app>header { padding-left:max(16px,env(safe-area-inset-left)); padding-right:max(16px,env(safe-area-inset-right)); }
+  .management-app>header { padding-top:max(14px,env(safe-area-inset-top)); }
+  .management-app>header nav { width:100%; justify-content:space-between; }
+  .heading-actions .refresh-control { flex:1; min-width:0; }
+  .heading-actions .refresh-control select { font-size:16px; min-width:0; }
+  .heading-actions #refresh { flex:0 0 auto; }
+  .heading-actions #companySelect { flex-basis:100%; width:100%; }
+  .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .metrics article { padding:14px; }
+  .metrics article:first-child { grid-column:auto; }
+  .metrics strong { margin-top:8px; }
+  dialog,#managementDialog { padding:16px; width:calc(100% - 16px); max-height:calc(100dvh - 16px); border-radius:14px; }
+  .dialog-head { top:-16px; }
+  dialog label input,dialog label select,dialog label textarea,#managementDialog input,#managementDialog select,#managementDialog textarea { font-size:16px; }
+  #noticePanel .notice-field textarea { font-size:16px; }
+  .technical-app .search-box { grid-template-columns:minmax(0,1fr) 56px 44px; }
+  .technical-app .report-submit-bar { padding-bottom:max(18px,env(safe-area-inset-bottom)); }
+  .technical-app #offlineBanner { justify-content:flex-start!important; font-size:12px!important; }
+}
+@media(max-width:640px) {
+  .management-app main { padding-top:18px; }
+  .filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .filters .grow { grid-column:1/-1; }
+  .results .table-scroll { max-height:none; overflow:visible; }
+  .results table,.results tbody { display:block; min-width:0; width:100%; }
+  .results thead { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .results tbody { padding:12px; }
+  .results tbody tr { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 12px; padding:14px; margin-bottom:10px; background:var(--field); border:1px solid var(--line); border-radius:12px; }
+  .results td { display:block; min-width:0; padding:0; border:0; font-size:13px; white-space:normal; }
+  .results td::before { content:attr(data-label); display:block; color:var(--muted); font-size:11px; font-weight:500; margin-bottom:2px; }
+  .results td:nth-child(1),.results td:nth-child(2),.results td:last-child { grid-column:1/-1; }
+  .results td:nth-child(2) { font-weight:650; }
+  .results td:last-child { display:flex; flex-wrap:wrap; gap:8px; padding-top:8px; border-top:1px solid var(--line); }
+  .results td:last-child::before { display:none; }
+  .results td button { min-height:44px; flex:1; }
+  .pagination { flex-wrap:wrap; }
+  .pagination button { flex:1; min-height:44px; }
+  .map-panel .section-title { align-items:center; }
+  .map-panel .section-title button { min-height:44px; }
+  .management-cards { grid-template-columns:1fr; }
+  .management-cards button { min-height:84px; flex-direction:column; align-items:flex-start; }
+  .management-cards span { max-width:none; text-align:left; }
+  .report-images { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .report-image-actions { width:100%; }
+  .report-image-actions button { min-height:44px; flex:1; }
+  .technical-app .radio-group { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .technical-app .radio-label { justify-content:center; padding:10px 4px; font-size:11px; }
+  .technical-app .evidence-actions { flex-direction:row; }
+  .technical-app .evidence-actions button { font-size:12px; }
+}
+@media(max-width:360px) {
+  .heading-actions #refresh { flex-basis:100%; }
+  .metrics span { font-size:11px; }
+  .technical-app .radio-group { grid-template-columns:1fr; }
+}
+@media print {
+  .results table { display:table; }
+  .results thead { position:static; display:table-header-group; width:auto; height:auto; clip-path:none; }
+  .results tbody { display:table-row-group; padding:0; }
+  .results tbody tr { display:table-row; }
+  .results td { display:table-cell!important; padding:7px 8px; }
+  .results td::before { display:none; }
+  .results .table-scroll { max-height:none; overflow:visible; }
+}

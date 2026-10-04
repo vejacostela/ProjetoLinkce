@@ -1,7 +1,8 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let client, currentUser, map, markers, offset = 0, requestVersion = 0, detailVersion = 0, activeReportId = null;
-let healthTimer = null;
+let healthMonitor = null, reportsRefresh = null, reportsAbort = null;
+let reportSignature = '', summarySignature = '';
 let currentReports = [];
 let activeFilters = {}, reportText = '';
 let activeIncidentId = null, activeIncident = null;
@@ -16,7 +17,7 @@ function authMessage(error) {
   return messages[error?.code] || (error?.status === 429 ? 'Muitas tentativas. Aguarde e tente novamente.' : 'Não foi possível autenticar. Confira a conexão e a configuração do sistema.');
 }
 const LOGIN_MAX_ATTEMPTS = 5, LOGIN_LOCK_MS = 15 * 60 * 1000, SESSION_IDLE_MS = 30 * 60 * 1000;
-let sessionIdleTimer;
+let sessionIdleTimer, sessionActivityReset;
 function loginGuard() {
   const item = JSON.parse(localStorage.getItem('linkce-login-attempts') || '{"count":0,"until":0}');
   if (item.until && item.until > Date.now()) return Math.ceil((item.until - Date.now()) / 60000);
@@ -32,7 +33,9 @@ function recordLoginFailure() {
 function clearLoginFailures() { localStorage.removeItem('linkce-login-attempts'); }
 function startSessionGuard() {
   clearTimeout(sessionIdleTimer);
+  if (sessionActivityReset) ['click','keydown','pointerdown','touchstart'].forEach(event => window.removeEventListener(event, sessionActivityReset));
   const reset = () => { clearTimeout(sessionIdleTimer); sessionIdleTimer = setTimeout(async () => { try { await client?.auth.signOut({scope:'local'}); } finally { signedOut('Sessão encerrada por inatividade. Entre novamente.'); } }, SESSION_IDLE_MS); };
+  sessionActivityReset = reset;
   ['click','keydown','pointerdown','touchstart'].forEach(event => window.addEventListener(event, reset, {passive:true}));
   reset();
 }
@@ -46,7 +49,7 @@ function defaultDates() {
 function clearResults() {
   $('rows').replaceChildren(); markers?.clearLayers();
   if ($('centerMap')) $('centerMap').disabled = true;
-  for (const id of ['total','technicians']) { const node=$(id); if(node) node.textContent = '—'; }
+  document.querySelectorAll('.metrics strong').forEach(node => { node.textContent = '—'; });
   $('empty').hidden = true; $('pageLabel').textContent = '';
   $('previous').disabled = true; $('next').disabled = true;
   $('mapStatus').textContent = '';
@@ -63,7 +66,11 @@ function applyBrand(empresa) {
 function signedOut(message = '') {
   currentUser = null; requestVersion++; detailVersion++;
   currentReports = [];
-  clearInterval(healthTimer); healthTimer = null;
+  healthMonitor?.stop(); reportsRefresh?.stop(); reportsAbort?.abort();
+  reportSignature = ''; summarySignature = '';
+  clearTimeout(sessionIdleTimer);
+  if (sessionActivityReset) ['click','keydown','pointerdown','touchstart'].forEach(event => window.removeEventListener(event, sessionActivityReset));
+  sessionActivityReset = null;
   $('workspace').hidden = true; $('login').hidden = false;
   $('logout').hidden = true; $('managementButton').hidden = true;
   $('managementDialog').close(); clearBankPreview();
@@ -87,6 +94,7 @@ async function api(path, options = {}) {
       body = await response.json().catch(() => null);
       if (response.ok || ![502,503,504].includes(response.status) || attempt === maxAttempts - 1) break;
     } catch (error) {
+      if (options.signal?.aborted) throw error;
       lastError = error;
       if (attempt === maxAttempts - 1) throw new Error('Serviço indisponível. Verifique sua conexão.');
     }
@@ -103,6 +111,14 @@ function initMap() {
   map = L.map('map').setView([-14,-52],4);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors',maxZoom:19}).addTo(map);
   markers = L.featureGroup().addTo(map);
+  if (window.ResizeObserver) {
+    let frame;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => map.invalidateSize({pan:false}));
+    });
+    observer.observe($('map'));
+  } else window.addEventListener('resize',()=>map.invalidateSize({pan:false}),{passive:true});
 }
 function mapMarkerStyle(status) {
   const colors = {
@@ -135,18 +151,17 @@ function filteredReports(reports) {
       && (!photos || (photos === 'com' ? hasPhotos : !hasPhotos));
   });
 }
-function render(data) {
+function render(data, {preserveMap = false} = {}) {
   const reports = data.relatorios;
   if (!Array.isArray(reports) || !Number.isInteger(data.total) || typeof data.has_more !== 'boolean') throw new Error('Integração pendente: atualize a API de relatórios antes de usar este painel.');
   currentReports = reports;
   const visibleReports = filteredReports(reports);
-  clearResults();
-  $('total').textContent = visibleReports.length + (visibleReports.length !== reports.length ? ` de ${data.total}` : '');
-  $('technicians').textContent = new Set(visibleReports.map(r => r.user_id || r.tecnico)).size;
+  $('rows').replaceChildren(); markers?.clearLayers();
   $('empty').hidden = visibleReports.length !== 0;
   $('pageLabel').textContent = visibleReports.length ? `${offset + 1}–${offset + visibleReports.length} de ${data.total}` : '0 resultados';
   $('previous').disabled = offset === 0; $('next').disabled = !data.has_more;
   const fragment = document.createDocumentFragment();
+  const labels = Array.from(document.querySelectorAll('.results thead th'), node => node.textContent.trim());
   for (const r of visibleReports) {
     const tr = document.createElement('tr');
     cell(tr,dateLabel(r.criado_em)); cell(tr,r.tecnico); cell(tr,r.equipamento_status || 'Não informado');
@@ -170,7 +185,9 @@ function render(data) {
       });
       actions.append(document.createTextNode(' '), retry);
     }
-    tr.append(actions); fragment.append(tr);
+    tr.append(actions);
+    Array.from(tr.children).forEach((td, index) => { td.dataset.label = labels[index] || 'Ações'; });
+    fragment.append(tr);
     if (map && hasLocation(r)) {
       const popup = document.createElement('div');
       const name = document.createElement('strong'); name.textContent = r.tecnico;
@@ -183,8 +200,10 @@ function render(data) {
   $('rows').append(fragment);
   if (map) {
     map.invalidateSize();
-    if (markers.getLayers().length) centerMap();
-    else map.setView([-14,-52],4);
+    if (!preserveMap) {
+      if (markers.getLayers().length) centerMap();
+      else map.setView([-14,-52],4);
+    }
   }
   if ($('centerMap')) $('centerMap').disabled = !markers?.getLayers().length;
   $('mapStatus').textContent = !window.L ? 'Mapa indisponível. As coordenadas continuam acessíveis nos detalhes.' : reports.some(hasLocation) ? 'Selecione um ponto para abrir o relatório.' : 'Nenhuma localização informada nesta página.';
@@ -247,36 +266,65 @@ function renderResumoOperacao(data) {
   if(alerts.length) mostrarAlertaOperacao(alerts.map(item=>item.mensagem).join(' ')); else ocultarAlertaOperacao();
   $('operationSummary').hidden = false;
 }
-async function loadResumoOperacao() {
+async function loadResumoOperacao(signal) {
   const query = new URLSearchParams(activeFilters);
-  try {
-    const data = await api('/api/operacao/resumo?' + query);
-    if (!currentUser) return;
-    renderResumoOperacao(data);
-  } catch (error) {
-    mostrarAlertaOperacao('Falha ao atualizar o resumo no Supabase. Os dados da tabela podem estar desatualizados. ' + error.message);
-  }
+  return api('/api/operacao/resumo?' + query, {signal});
 }
-async function loadReports() {
+async function loadReports({background = false} = {}) {
+  if (!currentUser) return false;
+  if (navigator.onLine === false) { $('status').textContent = 'Sem conexão · mantendo os últimos dados'; return false; }
   const version = ++requestVersion;
-  clearResults(); $('status').textContent = 'Carregando relatórios...';
-  $('apply').disabled = true; $('refresh').disabled = true;
+  reportsAbort?.abort();
+  const controller = new AbortController(); reportsAbort = controller;
+  const timeout = setTimeout(() => controller.abort('timeout'), 20000);
+  if (!background) $('status').textContent = 'Atualizando relatórios...';
+  $('refresh').disabled = true;
+  $('workspace').setAttribute('aria-busy', 'true');
+  const summary = loadResumoOperacao(controller.signal).then(data=>({data}), error=>({error}));
   try {
     const query = new URLSearchParams({...activeFilters,limite:PAGE_SIZE,offset});
-    const data = await api('/api/relatorios?' + query);
-    if (version !== requestVersion || !currentUser) return;
-    render(data); $('status').textContent = 'Atualizado às ' + dateFormat.format(new Date()) + ' · horário de Brasília'; ocultarAlertaOperacao(); loadResumoOperacao();
+    const data = await api('/api/relatorios?' + query, {signal:controller.signal});
+    if (version !== requestVersion || !currentUser) return false;
+    const signature = JSON.stringify([query.toString(), data, $('locationFilter').value, $('photosFilter').value]);
+    if (signature !== reportSignature) { render(data, {preserveMap:background}); reportSignature = signature; }
+    $('status').textContent = 'Atualizado às ' + dateFormat.format(new Date()) + ' · horário de Brasília';
+    const result = await summary;
+    if (version !== requestVersion || !currentUser) return false;
+    if (result.error) {
+      mostrarAlertaOperacao('Resumo pendente de atualização. Os relatórios continuam disponíveis. ' + (result.error.message || 'Tente novamente.'));
+      return false;
+    }
+    const summaryKey = JSON.stringify(result.data);
+    if (summaryKey !== summarySignature) { renderResumoOperacao(result.data); summarySignature = summaryKey; }
+    else {
+      const alerts = result.data.alertas || [];
+      if (alerts.length) mostrarAlertaOperacao(alerts.map(item=>item.mensagem).join(' '));
+      else ocultarAlertaOperacao();
+    }
+    return true;
   } catch (error) {
-    if (version === requestVersion) { clearResults(); $('status').textContent = error.message; mostrarAlertaOperacao('Falha ao carregar relatórios do Supabase. Tente atualizar novamente. ' + error.message); }
+    if (version === requestVersion && currentUser) {
+      const message = controller.signal.reason === 'timeout' ? 'O servidor demorou a responder. Tente atualizar novamente.' : error.message;
+      $('status').textContent = 'Atualização pendente · últimos dados preservados';
+      mostrarAlertaOperacao('Não foi possível atualizar os relatórios. ' + message);
+    }
+    controller.abort();
+    return false;
   } finally {
-    if (version === requestVersion) { $('apply').disabled = false; $('refresh').disabled = false; }
+    clearTimeout(timeout);
+    if (version === requestVersion) { $('apply').disabled = false; $('refresh').disabled = false; $('workspace').setAttribute('aria-busy', 'false'); }
+    if (!background) reportsRefresh?.reschedule();
   }
 }
 async function loadHealth() {
   const node = $('healthStatus');
   if (!node) return;
   try {
-    const response = await fetch('/health', {cache:'no-store'});
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    let response;
+    try { response = await fetch('/health', {cache:'no-store', signal:controller.signal}); }
+    finally { clearTimeout(timeout); }
     const data = await response.json().catch(() => ({}));
     const ok = response.ok && data.status === 'ok' && data.checks?.supabase;
     node.dataset.state = ok ? 'ok' : 'warn';
@@ -284,17 +332,41 @@ async function loadHealth() {
       ? 'Supabase conectado · ' + (Number(data.latencia_ms) || 0) + ' ms'
       : 'Supabase indisponível · dados podem estar desatualizados';
     node.title = ok ? 'Serviço e banco respondendo normalmente.' : 'Verifique a conexão e as variáveis do Supabase.';
+    return ok;
   } catch (_) {
     node.dataset.state = 'warn';
     node.textContent = 'Serviço indisponível · tentando novamente';
     node.title = 'A API de saúde não respondeu.';
+    return false;
   }
 }
 function startHealthMonitor() {
-  clearInterval(healthTimer);
-  loadHealth();
-  healthTimer = setInterval(loadHealth, 60000);
+  if (!$('healthStatus')) return;
+  healthMonitor ||= CampoRefresh.create({run:loadHealth, interval:120000, enabled:()=>Boolean(currentUser)});
+  healthMonitor.start({immediate:false});
 }
+function refreshCadence() {
+  const choice = $('refreshInterval').value;
+  if (choice !== 'auto') return Number(choice);
+  const connection = navigator.connection;
+  if (connection?.saveData || /(^|-)2g$/.test(connection?.effectiveType || '')) return 120000;
+  return window.matchMedia('(max-width: 760px)').matches ? 60000 : 30000;
+}
+function startReportsRefresh() {
+  reportsRefresh ||= CampoRefresh.create({
+    run:()=>loadReports({background:true}), interval:refreshCadence,
+    enabled:()=>Boolean(currentUser) && !document.querySelector('dialog[open], .leaflet-popup') && !document.querySelector('#filters input:focus, #filters select:focus'),
+    onState:(state, {interval})=>{
+      const node = $('refreshState'); if (!node) return;
+      const text = {offline:'Sem conexão', hidden:'Pausada em segundo plano', paused:'Atualização pausada', retrying:'Tentando reconectar', updating:'Atualizando…', stopped:''};
+      node.textContent = text[state] ?? ('A cada ' + Math.round(interval / 1000) + ' s');
+      node.dataset.state = state;
+    },
+  });
+  reportsRefresh.start({immediate:false});
+}
+$('refreshInterval').addEventListener('change',()=>reportsRefresh?.reschedule());
+window.addEventListener('offline',()=>{if(currentUser) $('status').textContent='Sem conexão · mantendo os últimos dados';});
 async function baixarArquivoAutenticado(path, nome) {
   try {
     const {data, error} = await client.auth.getSession();
@@ -534,6 +606,7 @@ async function enter() {
   $('identity').textContent = `${user.user_metadata?.nome || user.email} · ${role === 'gestor' ? 'Gestor' : 'Apoio'}`;
   $('apply').disabled = false; $('refresh').disabled = false;
   initMap(); defaultDates(); applyFilters();
+  startReportsRefresh();
 }
 function applyFilters() {
   if ($('start').value > $('end').value) { $('status').textContent = 'A data inicial deve ser anterior ou igual à final.'; return; }

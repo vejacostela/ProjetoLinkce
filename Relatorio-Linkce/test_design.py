@@ -45,7 +45,7 @@ class DesignTests(unittest.TestCase):
             self.assertEqual(page.errors, [], file.name)
             self.assertEqual(page.stack, [], file.name)
             self.assertEqual([key for key, n in Counter(page.ids).items() if n > 1], [])
-            self.assertIn('/panel-assets/design-system.css?v=1', page.links)
+            self.assertIn('/panel-assets/design-system.css?v=2', page.links)
 
     def test_report_controls_remain_in_submission_form(self):
         page = Markup((ROOT/'Relatorio-Linkce/index.html').read_text())
@@ -63,8 +63,9 @@ class DesignTests(unittest.TestCase):
 
     def test_shared_theme_is_precached(self):
         worker = (ROOT/'Relatorio-Linkce/static/sw.js').read_text()
-        self.assertIn("'/panel-assets/design-system.css?v=1'", worker)
-        self.assertIn("url.pathname === '/panel-assets/design-system.css'", worker)
+        self.assertIn("'/panel-assets/design-system.css?v=2'", worker)
+        self.assertIn("'/static/adaptive-refresh.js?v=1'", worker)
+        self.assertIn("'/panel-assets/design-system.css'", worker)
         self.assertTrue((ROOT/'static/design-system.css').is_file())
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Sistema de Campo · Relatório Técnico</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <link rel="manifest" href="/static/manifest.json">
 <meta name="theme-color" content="#182b3a">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -889,7 +889,7 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 .evidence-section{padding:16px;border:1px solid rgba(94,234,212,.22);border-radius:12px;background:rgba(15,23,42,.38)}.evidence-actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.evidence-actions button{flex:1;min-width:150px}.evidence-input{display:none}.evidence-preview{display:flex;gap:10px;overflow-x:auto;padding:4px 0;min-height:4px}.evidence-item{position:relative;flex:0 0 96px;height:96px;border-radius:10px;overflow:hidden;border:1px solid var(--border-color);background:#111827}.evidence-item img{width:100%;height:100%;object-fit:cover}.evidence-state{position:absolute;left:4px;bottom:4px;right:4px;padding:3px 5px;border-radius:6px;background:rgba(15,23,42,.88);color:#fff;font-size:9px;text-align:center}.evidence-remove{position:absolute;top:4px;right:4px;width:26px;height:26px;min-height:26px;padding:0;border-radius:50%;background:#172033e8;border-color:#64748b;color:#fff;font-size:18px;line-height:1}.evidence-help{font-size:12px;color:var(--text-secondary);margin:4px 0 0}
 </style>
 <link rel="stylesheet" href="/static/technical-minimal.css?v=2">
-<link rel="stylesheet" href="/panel-assets/design-system.css?v=1">
+<link rel="stylesheet" href="/panel-assets/design-system.css?v=2">
 </head>
 <body class="technical-app">
 
@@ -1109,7 +1109,8 @@ Gerar relatório
 </div>
 </div>
 
-<script src="/static/notices-tech.js?v=2"></script>
+<script src="/static/adaptive-refresh.js?v=1"></script>
+<script src="/static/notices-tech.js?v=3"></script>
 <script>
 (function() {
 let materiaisDisponiveis = [];
@@ -1194,10 +1195,12 @@ async function apiFetch(url, options = {}) {
 }
 
 let currentUser = null;
-let idleTimer;
+let idleTimer, activityReset;
 function iniciarExpiracaoSessao() {
   clearTimeout(idleTimer);
+  if (activityReset) ['click','keydown','pointerdown','touchstart'].forEach(type=>window.removeEventListener(type,activityReset));
   const reset = () => { clearTimeout(idleTimer); idleTimer = setTimeout(async () => { try { navigator.serviceWorker.controller?.postMessage({type:'CLEAR_SESSION'}); await sbClient?.auth.signOut({scope:'local'}); } finally { currentUser=null; mostrarLogin(); const el=document.getElementById('loginError'); el.textContent='Sessão encerrada por inatividade. Entre novamente.'; el.style.display='block'; } }, 30*60*1000); };
+  activityReset = reset;
   ['click','keydown','pointerdown','touchstart'].forEach(type=>window.addEventListener(type,reset,{passive:true}));
   reset();
 }
@@ -1263,6 +1266,9 @@ async function initAuth() {
 
 function mostrarLogin() {
   notices.close();
+  clearTimeout(idleTimer);
+  if (activityReset) ['click','keydown','pointerdown','touchstart'].forEach(type=>window.removeEventListener(type,activityReset));
+  activityReset = null;
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('mainApp').style.display = 'none';
   document.getElementById('userHeader').style.display = 'none';
@@ -1909,7 +1915,6 @@ function atualizarBannerOffline() {
       : estadoFilaOffline.failed > 0
         ? '⚠️ Há itens que precisam de uma nova tentativa'
         : '☁️ Itens salvos no aparelho aguardando sincronização';
-  document.body.style.paddingTop = (!online || temFila) ? '48px' : '';
   if (!online) {
     pedirContagemFila();
   }
@@ -1951,6 +1956,20 @@ window.sincronizarAgora = sincronizarAgora;
 window.addEventListener('online',  () => { atualizarBannerOffline(); sincronizarAgora(); });
 window.addEventListener('offline', atualizarBannerOffline);
 
+// Measure wrapped bars so large text and a small screen never cover the form.
+function atualizarDimensoesApp() {
+  const header = document.getElementById('userHeader');
+  const banner = document.getElementById('offlineBanner');
+  document.documentElement.style.setProperty('--app-header-height', header.getBoundingClientRect().height + 'px');
+  document.documentElement.style.setProperty('--sync-banner-height', banner.getBoundingClientRect().height + 'px');
+}
+if (window.ResizeObserver) {
+  const layoutObserver = new ResizeObserver(atualizarDimensoesApp);
+  layoutObserver.observe(document.getElementById('userHeader'));
+  layoutObserver.observe(document.getElementById('offlineBanner'));
+} else window.addEventListener('resize', atualizarDimensoesApp, {passive:true});
+atualizarDimensoesApp();
+
 if ('serviceWorker' in navigator) {
   let updateApplied = false;
   async function pendingOfflineItems() {
@@ -1965,6 +1984,15 @@ if ('serviceWorker' in navigator) {
   }
   async function applySafeUpdate(reg) {
     if (!reg.waiting || updateApplied) return;
+    const form = document.getElementById('formRelatorio');
+    const hasDraft = evidenceFiles.length || materiaisUtilizados.length || materiaisRecolhidos.length
+      || Array.from(form.querySelectorAll('textarea, input[name="maior_sinal"]')).some(field=>field.value.trim())
+      || form.querySelector('input[type="checkbox"]:checked, input[type="radio"]:checked')
+      || document.getElementById('btnSubmit').disabled;
+    if (hasDraft) {
+      mostrarToastSistema('Atualização pronta para o próximo acesso. Seu relatório em andamento está preservado.');
+      return;
+    }
     const pending = await pendingOfflineItems();
     if (pending > 0) {
       mostrarToastSistema('Nova atualização pronta. Ela será aplicada após sincronizar os itens pendentes.');
