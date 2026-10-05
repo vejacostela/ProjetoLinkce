@@ -11,6 +11,8 @@ const reportNotifications = window.CampoReportNotifications?.create({document,
   context:()=>({userId:currentUser?.id,empresaId:localStorage.getItem('linkce-empresa-id')}),
   openReport:id=>openReport(id),
 });
+const brandManager = window.CampoBrand?.manager({api:(...args)=>api(...args),
+  context:()=>({userId:currentUser?.id,empresaId:localStorage.getItem('linkce-empresa-id')})});
 let activeIncidentId = null, activeIncident = null;
 const PAGE_SIZE = 50;
 const AUDIT_PAGE_SIZE = 100;
@@ -73,6 +75,7 @@ function applyBrand(empresa) {
 function signedOut(message = '') {
   dateRangePicker?.close();
   reportNotifications?.stop();
+  brandManager?.reset();
   currentUser = null; requestVersion++; detailVersion++;
   currentReports = [];
   healthMonitor?.stop(); reportsRefresh?.stop(); reportsAbort?.abort();
@@ -617,6 +620,7 @@ async function enter() {
   initMap(); defaultDates(); applyFilters();
   startReportsRefresh();
   reportNotifications?.start();
+  brandManager?.load();
 }
 function applyFilters() {
   dateRangePicker?.sync();
@@ -777,7 +781,7 @@ async function loadServerSecurity() {
 }
 function showManagement(section = '') {
   document.getElementById('noticePanel')?.setAttribute('hidden','');
-  const sections = {user:'managementUser', password:'managementPassword', audit:'managementAudit', lgpd:'managementLgpd', incidents:'managementIncidents', server:'managementServer', bank:'managementBank', companies:'managementCompanies'};
+  const sections = {brand:'managementBrand', user:'managementUser', password:'managementPassword', audit:'managementAudit', lgpd:'managementLgpd', incidents:'managementIncidents', server:'managementServer', bank:'managementBank', companies:'managementCompanies'};
   $('managementHome').hidden = Boolean(section);
   Object.values(sections).forEach(id => $(id).hidden = sections[section] !== id);
 }
@@ -789,6 +793,7 @@ document.querySelectorAll('[data-management-target]').forEach(button=>button.add
   const target=button.dataset.managementTarget;
   if (target === 'companies' && !currentUser?.app_metadata?.platform_admin) return;
   showManagement(target);
+  if(target === 'brand') await brandManager?.load();
   if(target === 'user') $('userStatus').textContent='';
   if(target === 'password') { $('passwordManagerForm').reset(); $('resetLinkForm')?.reset(); $('resetLinkResult').hidden=true; $('passwordStatus').textContent=''; await loadPasswordHistory(); }
   if(target === 'audit') { auditOffset = 0; $('auditStatus').textContent=''; await loadAudit(); }

@@ -1,0 +1,30 @@
+.company-brand{display:flex;align-items:center;gap:12px;min-width:0;flex:0 1 440px}
+.company-brand-icon{width:44px;height:44px;object-fit:contain;border-radius:10px;background:white;flex:none}
+.company-brand-banner{max-width:100%;width:auto;height:62px;object-fit:contain;object-position:left center}
+.company-brand[data-has-banner=true] .brand,.company-brand[data-has-banner=true] .company-brand-icon{display:none}
+.company-brand img[hidden]{display:none}
+.technical-app #companyBrand{max-width:360px;flex:0 1 auto}
+.technical-app .company-brand-banner{max-height:42px;max-width:240px}
+.technical-app .company-brand-icon{width:34px;height:34px}
+.brand-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:16px 0}
+.brand-field{padding:16px;border:1px solid var(--line);border-radius:12px;min-width:0}
+.brand-field input[type=file]{width:100%;font-size:12px;margin-top:10px}
+.brand-preview{display:flex;align-items:center;justify-content:center;min-height:110px;border:1px dashed #bbcbd5;border-radius:10px;margin:14px 0;background:#f6f8fa;overflow:hidden}
+.brand-preview img{max-width:100%;max-height:110px;object-fit:contain}
+.brand-preview img[hidden]{display:none}
+.brand-preview-icon img{width:90px;height:90px}
+.brand-remove{display:flex;align-items:center;gap:8px;font-size:12px}
+.brand-remove input[type=checkbox]{width:18px;height:18px;min-height:0;margin:0;padding:0;flex:none}
+.brand-field p,#brandStatus{font-size:12px;color:var(--muted)}
+#detail .report-detail-head{align-items:center;flex-wrap:wrap;gap:12px}
+.report-detail-actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
+.report-detail-actions button{font-size:12px;min-height:40px;padding:8px 12px}
+@media(max-width:760px){
+ .brand-grid{grid-template-columns:1fr}
+ .management-app>header .company-brand{flex:1 1 100%}
+ .company-brand-banner{height:54px;max-width:min(100%,380px)}
+ .technical-app #companyBrand{max-width:160px}
+ .technical-app .company-brand-banner{max-width:150px;height:36px}
+ #detail .report-detail-head h2{flex:1 1 100%;margin:0}
+ .report-detail-actions{margin-left:0;width:100%;justify-content:flex-end}
+}

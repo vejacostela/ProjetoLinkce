@@ -12,15 +12,17 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from datetime import date, time, datetime, timedelta, timezone
 from uuid import UUID, uuid4
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, StreamingResponse
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Query, UploadFile, File, Form
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 import uvicorn
 if __package__:
+    from . import branding
     from .validation import validate_report, authenticate, role_of
 else:
+    import branding
     from validation import validate_report, authenticate, role_of
 
 logging.basicConfig(level=logging.INFO)
@@ -62,7 +64,8 @@ async def enforce_access(request, call_next):
             content_length = int(request.headers.get("content-length") or 0)
         except ValueError:
             content_length = 0
-        max_body = 55 * 1024 * 1024 if path.endswith("/imagens") else 2 * 1024 * 1024
+        max_body = (55 * 1024 * 1024 if path.endswith("/imagens") else
+                    8 * 1024 * 1024 if path == '/api/identidade-visual' else 2 * 1024 * 1024)
         if content_length > max_body:
             return JSONResponse({"detail": "Conteúdo enviado acima do limite permitido."}, status_code=413,
                                 headers={"X-Request-ID": request_id, "Cache-Control": "no-store"})
@@ -92,6 +95,8 @@ async def enforce_access(request, call_next):
             validar_sessao_servidor(request, user)
             aplicar_limite_api(request, user, request.state.empresa_id)
             role = role_of(user)
+            if path == '/api/identidade-visual' and request.method != 'GET' and role != 'gestor':
+                raise HTTPException(403, 'Somente o gestor pode alterar a identidade visual.')
             if path.startswith('/api/avisos') and request.method != 'GET' and role not in ('gestor', 'apoio'):
                 raise HTTPException(403, 'Acesso exclusivo da gestão e apoio.')
             if path == '/api/avisos/historico' and role not in ('gestor', 'apoio'):
@@ -138,7 +143,7 @@ async def enforce_access(request, call_next):
                   and role not in ("gestor", "apoio")):
                 raise HTTPException(403, "Acesso não autorizado.")
         except HTTPException as exc:
-            if path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd','/api/incidentes','/api/servidor')) and hasattr(request.state, 'user'):
+            if path.startswith(('/api/identidade-visual','/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/relatorios/','/api/lgpd','/api/incidentes','/api/servidor')) and hasattr(request.state, 'user'):
                 registrar_auditoria(request, None, 'negado' if exc.status_code < 500 else 'erro', exc.status_code)
             response = JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
             for key, value in (exc.headers or {}).items():
@@ -154,7 +159,7 @@ async def enforce_access(request, call_next):
     if protected or path == "/gerar_relatorio":
         response.headers["Cache-Control"] = "no-store"
     if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and (
-        path.startswith(('/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd','/api/incidentes','/api/servidor')) or
+        path.startswith(('/api/identidade-visual','/api/criar-usuario','/api/avisos','/api/banco','/api/seguranca','/api/empresas','/api/backup','/api/primeiro-acesso','/api/lgpd','/api/incidentes','/api/servidor')) or
         (path.startswith('/api/relatorios/') and '/imagens' in path and request.method in ('POST','PUT','DELETE'))
     ) and hasattr(request.state, 'user'):
         resultado = 'sucesso' if response.status_code < 400 else ('negado' if response.status_code < 500 else 'erro')
@@ -244,6 +249,8 @@ def classificar_auditoria(request: Request):
         categoria, entidade = 'seguranca', 'servidor_proprio'
         if '/backups' in path: entidade = 'backup_servidor'
         verbo = 'verificar' if method in ('POST','PUT') else 'consultar'
+    elif path.startswith('/api/identidade-visual'):
+        categoria, entidade, verbo = 'empresas', 'identidade_visual', 'atualizar'
     elif path.startswith('/api/relatorios'):
         categoria, entidade = 'relatorios', 'imagem' if '/imagens' in path else 'relatorio'
         if path.endswith('/reprocessar'): verbo = 'reprocessar'
@@ -1444,6 +1451,65 @@ async def reprocessar_relatorio(relatorio_id: UUID, request: Request):
 @app.get("/api/empresas")
 async def listar_empresas(request: Request):
     return {"empresas": _empresas_do_usuario(request.state.user)}
+
+@app.get('/api/identidade-visual')
+async def identidade_visual(request: Request):
+    company = request.state.empresa_id
+    return branding.presentation(branding.load_config(supabase_client, company), company)
+
+@app.post('/api/identidade-visual')
+async def salvar_identidade_visual(request: Request, icon512: UploadFile = File(None),
+                                 icon192: UploadFile = File(None), banner: UploadFile = File(None),
+                                 remover_icone: bool = Form(False), remover_banner: bool = Form(False)):
+    if role_of(request.state.user) != 'gestor':
+        raise HTTPException(403, 'Somente o gestor pode alterar a identidade visual.')
+    company = request.state.empresa_id
+    if bool(icon512) != bool(icon192) or (remover_icone and icon512) or (remover_banner and banner):
+        raise HTTPException(422, 'Revise os arquivos selecionados para a marca.')
+    assets = []
+    for kind, file, size in [('icon512', icon512, 512), ('icon192', icon192, 192)]:
+        if file:
+            content = await file.read(1024 * 1024 + 1)
+            branding.validate_icon(content, size)
+            assets.append((kind, content, 'image/png'))
+    if banner:
+        content = await banner.read(branding.MAX_IMAGE + 1)
+        mime = _detectar_tipo_imagem(content)
+        if not content or len(content) > branding.MAX_IMAGE or mime not in ('image/png','image/jpeg','image/webp'):
+            raise HTTPException(422, 'Banner inválido. Use PNG, JPEG ou WebP de até 3 MB.')
+        assets.append(('banner', content, mime))
+    if not assets and not remover_icone and not remover_banner:
+        raise HTTPException(422, 'Escolha um ícone ou banner antes de salvar.')
+    if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
+        raise HTTPException(503, 'Cadastro de empresas indisponível.')
+    rows = supabase_client.table('empresas').select('nome').eq('id', company).limit(1).execute().data or []
+    if not rows: raise HTTPException(404, 'Empresa não encontrada.')
+    brand = branding.save_config(supabase_client, company, rows[0].get('nome') or 'Sistema de Campo',
+                                 assets, remover_icone, remover_banner)
+    return {**brand, 'mensagem':'Identidade visual publicada para esta empresa.'}
+
+@app.get('/marca/{empresa_id}/manifest.webmanifest', include_in_schema=False)
+async def manifesto_empresa(empresa_id: UUID):
+    company = str(empresa_id)
+    config = branding.load_config(supabase_client, company)
+    return JSONResponse(branding.manifest(config, company), media_type='application/manifest+json',
+                        headers={'Cache-Control':'no-store'})
+
+@app.get('/marca/{empresa_id}/{asset}', include_in_schema=False)
+async def imagem_marca_empresa(empresa_id: UUID, asset: str):
+    if asset not in ('icon192','icon512','banner'): raise HTTPException(404, 'Imagem não encontrada.')
+    company = str(empresa_id)
+    config = branding.load_config(supabase_client, company)
+    item = branding.safe_asset(config, company, asset)
+    if not item: raise HTTPException(404, 'Imagem não configurada.')
+    try:
+        content = supabase_client.storage.from_(branding.BUCKET).download(item['path'])
+        if len(content) > branding.MAX_IMAGE or _detectar_tipo_imagem(content) != item['mime']:
+            raise HTTPException(503, 'Imagem da marca inválida.')
+        return Response(content, media_type=item['mime'], headers={'Cache-Control':'public, max-age=300',
+                         'X-Content-Type-Options':'nosniff'})
+    except HTTPException: raise
+    except Exception: raise HTTPException(503, 'Imagem da marca temporariamente indisponível.')
 
 def _empresas_do_usuario(user):
     if not supabase_client or not EMPRESA_TABLE_AVAILABLE:

@@ -890,6 +890,8 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 </style>
 <link rel="stylesheet" href="/static/technical-minimal.css?v=2">
 <link rel="stylesheet" href="/panel-assets/design-system.css?v=2">
+<link rel="stylesheet" href="/panel-assets/company-branding.css?v=1">
+<script defer src="/panel-assets/company-branding.js?v=1"></script>
 </head>
 <body class="technical-app">
 
@@ -923,6 +925,7 @@ background: linear-gradient(135deg, var(--primary-orange), var(--primary-yellow)
 
 <!-- HEADER DO USUÁRIO LOGADO -->
 <div id="userHeader" class="user-header" style="display:none">
+<div id="companyBrand" class="company-brand"><img id="companyIcon" class="company-brand-icon" hidden alt=""><img id="companyBanner" class="company-brand-banner" hidden alt=""></div>
 <div class="user-header-info">
 <span class="user-header-nome" id="userNome">Técnico</span>
 <span class="user-header-badge" id="userBadge">Técnico</span>
@@ -1269,6 +1272,7 @@ function mostrarLogin() {
   clearTimeout(idleTimer);
   if (activityReset) ['click','keydown','pointerdown','touchstart'].forEach(type=>window.removeEventListener(type,activityReset));
   activityReset = null;
+  window.CampoBrand?.apply(null);
   document.getElementById('loginScreen').style.display = 'flex';
   document.getElementById('mainApp').style.display = 'none';
   document.getElementById('userHeader').style.display = 'none';
@@ -1281,13 +1285,20 @@ async function aplicarMarcaEmpresa(user) {
     const empresas = (await response.json()).empresas || [];
     const remembered = localStorage.getItem('linkce-empresa-id');
     const fromProfile = user?.app_metadata?.empresa_id;
-    const empresa = empresas.find(item => item.id === remembered) || empresas.find(item => item.id === fromProfile) || empresas[0];
+    const requested = new URLSearchParams(location.search).get('empresa');
+    const empresa = empresas.find(item => item.id === requested) || empresas.find(item => item.id === remembered) || empresas.find(item => item.id === fromProfile) || empresas[0];
     if (!empresa?.id) return;
     localStorage.setItem('linkce-empresa-id', empresa.id);
     const nome = String(empresa.nome || 'Sistema de Campo').trim() || 'Sistema de Campo';
     document.title = `${nome} · Relatório Técnico`;
     const eyebrow = document.getElementById('brandEyebrow');
     if (eyebrow) eyebrow.textContent = `${nome.toUpperCase()} / OPERAÇÃO EM CAMPO`;
+    if (!window.CampoBrand && document.readyState === 'loading') await new Promise(resolve=>document.addEventListener('DOMContentLoaded',resolve,{once:true}));
+    const brandResponse = await apiFetch('/api/identidade-visual');
+    if (brandResponse.ok) {
+      const brand = await brandResponse.json();
+      if (currentUser?.id === user.id && localStorage.getItem('linkce-empresa-id') === empresa.id) window.CampoBrand?.apply(brand);
+    }
   } catch (_) {
     // A tela continua utilizável offline com a identificação genérica.
   }

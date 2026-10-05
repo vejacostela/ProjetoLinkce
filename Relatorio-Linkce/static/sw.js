@@ -1,8 +1,8 @@
-const CACHE = 'gestao-campo-v10';
+const CACHE = 'gestao-campo-v11';
 const OFFLINE_DB_VERSION = 4;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
-const SHELL = ['/tecnico', '/panel-assets/design-system.css?v=2', '/static/adaptive-refresh.js?v=1', '/static/notices-tech.js?v=3', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
+const SHELL = ['/tecnico', '/panel-assets/company-branding.css?v=1', '/panel-assets/company-branding.js?v=1', '/panel-assets/design-system.css?v=2', '/static/adaptive-refresh.js?v=1', '/static/notices-tech.js?v=3', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
 
 // ── Instalação: pré-cache do shell ──────────────────────────────────────────
 self.addEventListener('install', e => {
@@ -60,6 +60,19 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       caches.match(request).then(hit => hit || fetchECachear(request))
     );
+    return;
+  }
+
+  // Only public company brand assets are cacheable; every URL includes its company.
+  if (url.pathname.startsWith('/marca/') && request.method === 'GET') {
+    e.respondWith(fetch(request).then(res => {
+      if (res.ok) { const copy=res.clone(); e.waitUntil(caches.open(CACHE).then(c => c.put(request, copy)).catch(() => {})); }
+      return res;
+    }).catch(() => caches.match(request)));
+    return;
+  }
+  if (url.pathname.startsWith('/panel-assets/company-branding.')) {
+    e.respondWith(caches.match(request).then(hit => hit || fetchECachear(request)));
     return;
   }
 
