@@ -1290,6 +1290,32 @@ async def resumo_operacao(request: Request, inicio: date = None, fim: date = Non
         logger.exception("Falha ao calcular resumo operacional")
         raise HTTPException(503, "Resumo operacional indisponível. Verifique a conexão com o Supabase.")
 
+@app.get("/api/operacao/notificacoes")
+async def notificacoes_relatorios(request: Request, limite: int = Query(100, ge=1, le=100)):
+    """A confirmação persistida do relatório é a origem única do aviso, inclusive offline."""
+    if role_of(request.state.user) not in ("gestor", "apoio"):
+        raise HTTPException(403, "Acesso exclusivo da gestão e apoio.")
+    if not supabase_client:
+        raise HTTPException(503, "Notificações indisponíveis. Verifique a conexão com o banco.")
+    try:
+        query = aplicar_empresa(supabase_client.table("relatorios").select("id,tecnico,criado_em"),
+                                request.state.empresa_id)
+        if REPORT_STATUS_AVAILABLE:
+            query = query.eq("status_envio", "sincronizado")
+        rows = (query.order("criado_em", desc=True).order("id", desc=True)
+                .limit(limite + 1).execute().data or [])
+        return {"empresa_id": request.state.empresa_id,
+                "notificacoes": [{"id": str(row["id"]), "relatorio_id": str(row["id"]),
+                                  "tecnico": row.get("tecnico") or "Técnico",
+                                  "criado_em": row.get("criado_em"), "tipo": "relatorio_enviado"}
+                                 for row in rows[:limite]],
+                "has_more": len(rows) > limite}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Falha ao consultar notificações de relatórios")
+        raise HTTPException(503, "Não foi possível atualizar as notificações. Tente novamente.")
+
 @app.get("/api/relatorios")
 async def listar_relatorios(
     request: Request,

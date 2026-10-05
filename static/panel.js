@@ -6,6 +6,11 @@ let healthMonitor = null, reportsRefresh = null, reportsAbort = null;
 let reportSignature = '', summarySignature = '';
 let currentReports = [];
 let activeFilters = {}, reportText = '';
+const reportNotifications = window.CampoReportNotifications?.create({document,
+  api:(...args)=>api(...args),
+  context:()=>({userId:currentUser?.id,empresaId:localStorage.getItem('linkce-empresa-id')}),
+  openReport:id=>openReport(id),
+});
 let activeIncidentId = null, activeIncident = null;
 const PAGE_SIZE = 50;
 const AUDIT_PAGE_SIZE = 100;
@@ -67,6 +72,7 @@ function applyBrand(empresa) {
 }
 function signedOut(message = '') {
   dateRangePicker?.close();
+  reportNotifications?.stop();
   currentUser = null; requestVersion++; detailVersion++;
   currentReports = [];
   healthMonitor?.stop(); reportsRefresh?.stop(); reportsAbort?.abort();
@@ -610,6 +616,7 @@ async function enter() {
   $('apply').disabled = false; $('refresh').disabled = false;
   initMap(); defaultDates(); applyFilters();
   startReportsRefresh();
+  reportNotifications?.start();
 }
 function applyFilters() {
   dateRangePicker?.sync();
@@ -686,7 +693,7 @@ $('restoreFilters').addEventListener('click',()=>{
 });
 
 $('reset').addEventListener('click',()=>{defaultDates();applyFilters();});
-$('refresh').addEventListener('click',loadReports);
+$('refresh').addEventListener('click',()=>{loadReports();reportNotifications?.refresh();});
 $('centerMap')?.addEventListener('click', centerMap);
 function csvValue(value) { return `"${String(value ?? '').replaceAll('"','""')}"`; }
 function exportReports() {

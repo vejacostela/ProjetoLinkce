@@ -1,0 +1,28 @@
+#notificationsButton{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;font-size:13px}
+#notificationsButton[hidden],#notificationToast[hidden]{display:none}
+.notification-bell{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.notification-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:20px;background:#146b60;color:#fff;font-size:11px;font-weight:750;padding:0 5px}
+.notification-badge[hidden]{display:none}
+dialog#notificationsDialog{width:min(650px,calc(100vw - 24px));max-height:calc(100dvh - 32px);padding:20px;overflow:auto}
+.notification-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.notification-actions button{font-size:12px;min-height:40px;padding:8px 12px}
+#notificationsList{display:grid;gap:8px}
+.report-notification{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.report-notification[data-unread=true]{border-left:3px solid #146b60;background:#f2faf7}
+.report-notification>div{min-width:0}
+.report-notification strong{display:block;font-size:14px;overflow-wrap:anywhere}
+.report-notification p{font-size:13px;margin:3px 0;color:var(--muted)}
+.report-notification time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.notification-read-state{margin-left:8px;font-size:11px;color:#146b60;font-weight:650}
+.report-notification button{flex:none;font-size:12px;min-height:40px;padding:8px 12px}
+#notificationsStatus,#notificationsLimit,#notificationsEmpty{font-size:12px;color:var(--muted)}
+#notificationToast{position:fixed;bottom:max(20px,env(safe-area-inset-bottom));right:20px;z-index:1200;display:flex;align-items:center;gap:12px;max-width:min(520px,calc(100vw - 32px));padding:14px 16px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-left:4px solid #146b60;border-radius:12px;box-shadow:0 12px 40px #182b3a25}
+#notificationToastText{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+#notificationToast button{font-size:12px;padding:6px 10px;min-height:40px;flex:none}
+@media(max-width:600px){
+ dialog#notificationsDialog{padding:16px}
+ .report-notification{align-items:flex-start;gap:8px;flex-direction:column}
+ .report-notification button{align-self:flex-end}
+ #notificationToast{right:12px;left:12px;max-width:none;gap:8px;flex-wrap:wrap}
+ #notificationToastText{flex:1 1 200px}
+}
