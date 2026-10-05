@@ -74,11 +74,11 @@ class BrandTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPException):branding.safe_asset({'banner':{'path':f'{B}/x.png','mime':'image/png'}},A,'banner')
     async def test_technician_cannot_change_company_brand(self):
         with self.assertRaises(HTTPException) as caught:
-            await main.salvar_identidade_visual(self.req('tecnico'),None,None,False)
+            await main.salvar_identidade_visual(self.req('tecnico'),None,None,False,None)
         self.assertEqual(caught.exception.status_code,403)
     async def test_actual_endpoint_publishes_normalized_icon_pair(self):
         with patch.multiple(main,supabase_client=self.db,EMPRESA_TABLE_AVAILABLE=True):
-            result=await main.salvar_identidade_visual(self.req(),UploadFile(io.BytesIO(png(512))),UploadFile(io.BytesIO(png(192))),False)
+            result=await main.salvar_identidade_visual(self.req(),UploadFile(io.BytesIO(png(512))),UploadFile(io.BytesIO(png(192))),False,None)
             loaded=await main.identidade_visual(self.req())
         self.assertEqual(result['icon192'],loaded['icon192']);self.assertEqual(result['nome'],'Empresa A')
     async def test_public_image_route_never_serves_config_or_arbitrary_files(self):
@@ -89,3 +89,23 @@ class BrandTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.media_type,'image/png')
             with self.assertRaises(HTTPException):await main.imagem_marca_empresa(UUID(A),'config.json')
             with self.assertRaises(HTTPException):await main.imagem_marca_empresa(UUID(A),'banner')
+
+    async def test_theme_only_save_persists_per_company_and_updates_manifest_colors(self):
+        theme={**branding.DEFAULT_THEME,'page_bg':[20,30,40],'top_bg':[40,50,60],'font_size':18}
+        with patch.multiple(main,supabase_client=self.db,EMPRESA_TABLE_AVAILABLE=True):
+            result=await main.salvar_identidade_visual(self.req(),None,None,False,json.dumps(theme))
+            loaded=await main.identidade_visual(self.req())
+        self.assertEqual(result['tema'],theme);self.assertEqual(loaded['tema'],theme)
+        self.assertEqual(branding.presentation(branding.load_config(self.db,B),B)['tema'],branding.DEFAULT_THEME)
+        manifest=branding.manifest(branding.load_config(self.db,A),A)
+        self.assertEqual(manifest['background_color'],'#141e28');self.assertEqual(manifest['theme_color'],'#28323c')
+    async def test_invalid_theme_is_rejected_before_any_upload(self):
+        for value in [None,{}, {**branding.DEFAULT_THEME,'page_bg':[256,0,0]}, {**branding.DEFAULT_THEME,'top_bg':[True,0,0]}, {**branding.DEFAULT_THEME,'font_size':100}, {**branding.DEFAULT_THEME,'text_color':'url(javascript:alert(1))'}]:
+            with self.subTest(value=value),self.assertRaises(HTTPException) as caught:
+                await main.salvar_identidade_visual(self.req(),None,None,False,json.dumps(value))
+            self.assertEqual(caught.exception.status_code,422)
+        self.assertEqual(self.db.storage.bucket.files,{})
+    def test_icon_update_preserves_saved_theme(self):
+        branding.save_config(self.db,A,'Empresa A',[],theme=branding.DEFAULT_THEME)
+        result=branding.save_config(self.db,A,'Empresa A',self.assets())
+        self.assertEqual(result['tema'],branding.DEFAULT_THEME)

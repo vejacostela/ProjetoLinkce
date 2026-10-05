@@ -7,6 +7,26 @@ from fastapi import HTTPException
 BUCKET = 'empresa-identidade'
 MAX_IMAGE = 3 * 1024 * 1024
 
+DEFAULT_THEME = {'page_bg':[243,245,247], 'top_bg':[24,43,58],
+                 'text_color':[24,43,58], 'top_text_color':[255,255,255],
+                 'font_size':15, 'top_font_size':13}
+
+def validate_theme(value):
+    if not isinstance(value, dict) or set(value) != set(DEFAULT_THEME):
+        raise HTTPException(422, 'Revise as configurações de cores e fontes.')
+    result = {}
+    for key in ('page_bg','top_bg','text_color','top_text_color'):
+        channels = value[key]
+        if not isinstance(channels, list) or len(channels) != 3 or any(type(n) is not int or not 0 <= n <= 255 for n in channels):
+            raise HTTPException(422, 'Cada cor RGB deve conter três números de 0 a 255.')
+        result[key] = channels[:]
+    for key in ('font_size','top_font_size'):
+        size = value[key]
+        if type(size) is not int or not 12 <= size <= 22:
+            raise HTTPException(422, 'O tamanho da fonte deve ser de 12 a 22 pixels.')
+        result[key] = size
+    return result
+
 def missing(exc):
     data = exc.args[0] if exc.args and isinstance(exc.args[0], dict) else {}
     status = str(getattr(exc, 'status', '') or getattr(exc, 'status_code', '') or data.get('statusCode', ''))
@@ -58,13 +78,16 @@ def presentation(config, company):
     for asset in ('icon192', 'icon512'):
         urls[asset] = f'/marca/{company}/{asset}?v={revision}' if safe_asset(config, company, asset) else None
     return {'empresa_id': str(company), 'nome': config.get('nome') or '', **urls,
-            'manifest': f'/marca/{company}/manifest.webmanifest?v={revision}', 'revision': revision}
+            'manifest': f'/marca/{company}/manifest.webmanifest?v={revision}', 'revision': revision,
+            'tema': validate_theme(config.get('tema', DEFAULT_THEME))}
 
-def save_config(db, company, name, assets, remove_icon=False):
+def save_config(db, company, name, assets, remove_icon=False, theme=None):
+    if theme is not None: theme = validate_theme(theme)
     old = load_config(db, company)
     ensure_bucket(db)
     revision = uuid4().hex
     config = {**old, 'nome': name, 'revision': revision}
+    if theme is not None: config['tema'] = theme
     if remove_icon:
         config.pop('icon192', None); config.pop('icon512', None)
     config.pop('banner', None) # Retire legacy banners without deleting stored originals.
@@ -88,6 +111,8 @@ def manifest(config, company):
     name = str(config.get('nome') or 'Sistema de Campo')[:120]
     return {'name':name, 'short_name':name[:24], 'description':'Relatórios técnicos em campo',
         'id':f'/tecnico?empresa={company}', 'start_url':f'/tecnico?empresa={company}', 'scope':'/tecnico',
-        'display':'standalone', 'lang':'pt-BR','background_color':'#f3f5f7','theme_color':'#182b3a',
+        'display':'standalone', 'lang':'pt-BR',
+        'background_color':'#'+''.join(f'{n:02x}' for n in brand['tema']['page_bg']),
+        'theme_color':'#'+''.join(f'{n:02x}' for n in brand['tema']['top_bg']),
         'icons':[{'src':brand['icon192'] or '/static/icon-192.png','sizes':'192x192','type':'image/png','purpose':'any'},
                  {'src':brand['icon512'] or '/static/icon-512.png','sizes':'512x512','type':'image/png','purpose':'any'}]}

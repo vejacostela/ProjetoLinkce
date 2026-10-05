@@ -23,3 +23,34 @@
  #detail .report-detail-head h2{flex:1 1 100%;margin:0}
  .report-detail-actions{margin-left:0;width:100%;justify-content:flex-end}
 }
+
+/* Saved company theme applies to both workspaces, never to map tiles or images. */
+html[data-company-theme=true]{--bg:var(--company-page-bg);--text:var(--company-text-color);--muted:color-mix(in srgb,var(--text) 80%,var(--bg));--line:color-mix(in srgb,var(--text) 20%,var(--bg));--surface:var(--company-surface);--field:var(--company-field)}
+html[data-company-theme=true] body.management-app,html[data-company-theme=true] body.technical-app{background:var(--company-page-bg);color:var(--company-text-color);font-size:var(--company-font-size)}
+html[data-company-theme=true] :is(.management-app>header,.technical-app .user-header){background:var(--company-top-bg);color:var(--company-top-text-color)}
+html[data-company-theme=true] :is(.management-app>header,.technical-app .user-header) :is(a,button,.brand,.brand span,.user-header-nome){color:var(--company-top-text-color);font-size:var(--company-top-font-size)}
+html[data-company-theme=true] :is(.management-app>header,.technical-app .user-header) button{background:transparent;border-color:currentColor}
+html[data-company-theme=true] :is(.management-app main,.technical-app .container,dialog) :is(label,input,textarea,select,button,td){font-size:calc(13px * var(--company-font-scale))}
+html[data-company-theme=true] :is(.management-app main,.technical-app .container,dialog) :is(p,.muted,th){font-size:calc(12px * var(--company-font-scale))}
+html[data-company-theme=true] :is(.management-app main,.technical-app .container,dialog) :is(h2,h3){font-size:calc(17px * var(--company-font-scale))}
+html[data-company-theme=true] :is(dialog,#managementDialog,.report-submit-bar,.technical-app .checklist-item,.technical-app .search-results){background:var(--surface);color:var(--text)}
+.brand-theme-settings{margin:18px 0;padding:16px;border:1px solid var(--line);border-radius:12px}
+.brand-theme-settings h4{margin:0 0 8px}
+.brand-theme-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:16px 0}
+.brand-color{min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:10px}
+.brand-color legend{font-size:13px;font-weight:600;padding:0 4px}
+.brand-color-controls{display:flex;align-items:end;gap:10px}
+.brand-rgb{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;min-width:0;flex:1}
+.brand-rgb label{display:block;margin:0;font-size:11px}
+.brand-rgb input{width:100%;box-sizing:border-box;min-width:0;padding:8px!important}
+#managementBrand .brand-color input[type=color]{width:44px;min-width:44px;height:44px;min-height:44px;padding:3px;background:transparent;cursor:pointer;margin:0}
+.brand-theme-preview{border:1px solid #bdcad3;border-radius:10px;overflow:hidden;margin-top:16px}
+.brand-theme-preview-top{background:var(--company-top-bg,#182b3a);color:var(--company-top-text-color,#fff);font-size:var(--company-top-font-size,13px);padding:12px 16px;overflow-wrap:anywhere}
+.brand-theme-preview-page{background:var(--company-page-bg,#f3f5f7);color:var(--company-text-color,#182b3a);font-size:var(--company-font-size,15px);padding:20px 16px;overflow-wrap:anywhere}
+.brand-theme-preview-page span{font-size:.85em}
+@media(max-width:600px){.brand-theme-grid{grid-template-columns:1fr}.brand-theme-settings{padding:12px}.brand-color{padding:10px}}
+
+html[data-company-theme=true] .management-app>header .brand{font-size:calc(var(--company-top-font-size) * 1.6)}
+html[data-company-theme=true] .management-app>header .brand span{font-size:calc(var(--company-top-font-size) * .85)}
+
+@media(max-width:640px){html[data-company-theme=true] :is(.management-app main,.technical-app .container,dialog) :is(input,textarea,select){font-size:max(16px,calc(13px * var(--company-font-scale)))}}

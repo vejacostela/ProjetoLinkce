@@ -1460,9 +1460,15 @@ async def identidade_visual(request: Request):
 @app.post('/api/identidade-visual')
 async def salvar_identidade_visual(request: Request, icon512: UploadFile = File(None),
                                  icon192: UploadFile = File(None),
-                                 remover_icone: bool = Form(False)):
+                                 remover_icone: bool = Form(False), tema: str = Form(None)):
     if role_of(request.state.user) != 'gestor':
         raise HTTPException(403, 'Somente o gestor pode alterar a identidade visual.')
+    theme = None
+    if tema is not None:
+        if not isinstance(tema, str) or len(tema) > 2000:
+            raise HTTPException(422, 'Configuração visual inválida.')
+        try: theme = branding.validate_theme(json.loads(tema))
+        except (ValueError, TypeError): raise HTTPException(422, 'Configuração visual inválida.')
     company = request.state.empresa_id
     if bool(icon512) != bool(icon192) or (remover_icone and icon512):
         raise HTTPException(422, 'Revise os arquivos selecionados para a marca.')
@@ -1472,14 +1478,14 @@ async def salvar_identidade_visual(request: Request, icon512: UploadFile = File(
             content = await file.read(1024 * 1024 + 1)
             branding.validate_icon(content, size)
             assets.append((kind, content, 'image/png'))
-    if not assets and not remover_icone:
-        raise HTTPException(422, 'Escolha um ícone antes de salvar.')
+    if not assets and not remover_icone and theme is None:
+        raise HTTPException(422, 'Escolha um ícone ou ajuste as cores e fontes antes de salvar.')
     if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
         raise HTTPException(503, 'Cadastro de empresas indisponível.')
     rows = supabase_client.table('empresas').select('nome').eq('id', company).limit(1).execute().data or []
     if not rows: raise HTTPException(404, 'Empresa não encontrada.')
     brand = branding.save_config(supabase_client, company, rows[0].get('nome') or 'Sistema de Campo',
-                                 assets, remover_icone)
+                                 assets, remover_icone, theme)
     return {**brand, 'mensagem':'Identidade visual publicada para esta empresa.'}
 
 @app.get('/marca/{empresa_id}/manifest.webmanifest', include_in_schema=False)

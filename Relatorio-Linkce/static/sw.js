@@ -1,8 +1,8 @@
-const CACHE = 'gestao-campo-v12';
+const CACHE = 'gestao-campo-v13';
 const OFFLINE_DB_VERSION = 4;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 const MAX_QUEUE_ATTEMPTS = 8;
-const SHELL = ['/tecnico', '/panel-assets/company-branding.css?v=2', '/panel-assets/company-branding.js?v=2', '/panel-assets/design-system.css?v=2', '/static/adaptive-refresh.js?v=1', '/static/notices-tech.js?v=3', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
+const SHELL = ['/tecnico', '/panel-assets/company-branding.css?v=3', '/panel-assets/company-branding.js?v=3', '/panel-assets/design-system.css?v=2', '/static/adaptive-refresh.js?v=1', '/static/notices-tech.js?v=3', '/static/technical-minimal.css?v=2', '/static/style.css', '/static/technical-minimal.css', '/static/auth-ui.js', '/static/manifest.json', '/api/config', '/api/materiais', '/static/icon-192.png', '/static/icon-512.png'];
 
 // ── Instalação: pré-cache do shell ──────────────────────────────────────────
 self.addEventListener('install', e => {
