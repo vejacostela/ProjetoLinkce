@@ -55,19 +55,19 @@ def safe_asset(config, company, asset):
 def presentation(config, company):
     revision = str(config.get('revision') or '')
     urls = {}
-    for asset in ('icon192', 'icon512', 'banner'):
+    for asset in ('icon192', 'icon512'):
         urls[asset] = f'/marca/{company}/{asset}?v={revision}' if safe_asset(config, company, asset) else None
     return {'empresa_id': str(company), 'nome': config.get('nome') or '', **urls,
             'manifest': f'/marca/{company}/manifest.webmanifest?v={revision}', 'revision': revision}
 
-def save_config(db, company, name, assets, remove_icon=False, remove_banner=False):
+def save_config(db, company, name, assets, remove_icon=False):
     old = load_config(db, company)
     ensure_bucket(db)
     revision = uuid4().hex
     config = {**old, 'nome': name, 'revision': revision}
     if remove_icon:
         config.pop('icon192', None); config.pop('icon512', None)
-    if remove_banner: config.pop('banner', None)
+    config.pop('banner', None) # Retire legacy banners without deleting stored originals.
     bucket = db.storage.from_(BUCKET)
     try:
         for kind, content, mime in assets:

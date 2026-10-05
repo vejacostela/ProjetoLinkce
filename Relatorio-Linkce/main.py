@@ -1459,12 +1459,12 @@ async def identidade_visual(request: Request):
 
 @app.post('/api/identidade-visual')
 async def salvar_identidade_visual(request: Request, icon512: UploadFile = File(None),
-                                 icon192: UploadFile = File(None), banner: UploadFile = File(None),
-                                 remover_icone: bool = Form(False), remover_banner: bool = Form(False)):
+                                 icon192: UploadFile = File(None),
+                                 remover_icone: bool = Form(False)):
     if role_of(request.state.user) != 'gestor':
         raise HTTPException(403, 'Somente o gestor pode alterar a identidade visual.')
     company = request.state.empresa_id
-    if bool(icon512) != bool(icon192) or (remover_icone and icon512) or (remover_banner and banner):
+    if bool(icon512) != bool(icon192) or (remover_icone and icon512):
         raise HTTPException(422, 'Revise os arquivos selecionados para a marca.')
     assets = []
     for kind, file, size in [('icon512', icon512, 512), ('icon192', icon192, 192)]:
@@ -1472,20 +1472,14 @@ async def salvar_identidade_visual(request: Request, icon512: UploadFile = File(
             content = await file.read(1024 * 1024 + 1)
             branding.validate_icon(content, size)
             assets.append((kind, content, 'image/png'))
-    if banner:
-        content = await banner.read(branding.MAX_IMAGE + 1)
-        mime = _detectar_tipo_imagem(content)
-        if not content or len(content) > branding.MAX_IMAGE or mime not in ('image/png','image/jpeg','image/webp'):
-            raise HTTPException(422, 'Banner inválido. Use PNG, JPEG ou WebP de até 3 MB.')
-        assets.append(('banner', content, mime))
-    if not assets and not remover_icone and not remover_banner:
-        raise HTTPException(422, 'Escolha um ícone ou banner antes de salvar.')
+    if not assets and not remover_icone:
+        raise HTTPException(422, 'Escolha um ícone antes de salvar.')
     if not supabase_client or not EMPRESA_TABLE_AVAILABLE:
         raise HTTPException(503, 'Cadastro de empresas indisponível.')
     rows = supabase_client.table('empresas').select('nome').eq('id', company).limit(1).execute().data or []
     if not rows: raise HTTPException(404, 'Empresa não encontrada.')
     brand = branding.save_config(supabase_client, company, rows[0].get('nome') or 'Sistema de Campo',
-                                 assets, remover_icone, remover_banner)
+                                 assets, remover_icone)
     return {**brand, 'mensagem':'Identidade visual publicada para esta empresa.'}
 
 @app.get('/marca/{empresa_id}/manifest.webmanifest', include_in_schema=False)
@@ -1497,7 +1491,7 @@ async def manifesto_empresa(empresa_id: UUID):
 
 @app.get('/marca/{empresa_id}/{asset}', include_in_schema=False)
 async def imagem_marca_empresa(empresa_id: UUID, asset: str):
-    if asset not in ('icon192','icon512','banner'): raise HTTPException(404, 'Imagem não encontrada.')
+    if asset not in ('icon192','icon512'): raise HTTPException(404, 'Imagem não encontrada.')
     company = str(empresa_id)
     config = branding.load_config(supabase_client, company)
     item = branding.safe_asset(config, company, asset)

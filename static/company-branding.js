@@ -4,8 +4,8 @@
   function image(id,url,alt){const node=doc.getElementById(id);if(!node)return;node.hidden=!url;if(url){node.src=url;node.alt=alt;}else node.removeAttribute('src');}
   function apply(brand){
     const name=brand?.nome||'Sistema de Campo';
-    image('companyIcon',brand?.icon192,name);image('companyBanner',brand?.banner,name);
-    const wrapper=doc.getElementById('companyBrand');if(wrapper)wrapper.dataset.hasBanner=String(Boolean(brand?.banner));
+    image('companyIcon',brand?.icon192,name);image('companyBanner',null,'');
+    const wrapper=doc.getElementById('companyBrand');if(wrapper)wrapper.dataset.hasBanner='false';
     let icon=doc.querySelector('link[rel="icon"]');
     if(!icon){icon=doc.createElement('link');icon.rel='icon';doc.head.append(icon);}icon.href=brand?.icon192||'/static/icon-192.png';
     let apple=doc.querySelector('link[rel="apple-touch-icon"]');
@@ -21,7 +21,7 @@
       if(!img.naturalWidth || !img.naturalHeight || img.naturalWidth*img.naturalHeight>50000000)throw new Error('Use uma imagem de resolução menor.');
       const canvas=doc.createElement('canvas');const context=canvas.getContext('2d');
       if(icon){
-        canvas.width=size;canvas.height=size;context.fillStyle='#ffffff';context.fillRect(0,0,size,size);
+        canvas.width=size;canvas.height=size; // Keep the canvas alpha channel; never flatten transparent PNGs.
         const scale=(size*.78)/Math.max(img.naturalWidth,img.naturalHeight);
         const width=img.naturalWidth*scale,height=img.naturalHeight*scale;context.drawImage(img,(size-width)/2,(size-height)/2,width,height);
       }else{
@@ -38,16 +38,16 @@
     const $=id=>doc.getElementById(id);if(!$('brandForm'))return null;
     let generation=0,brand=null,previews=[],scope='';
     const identity=()=>JSON.stringify(context());
-    const busy=value=>['brandIconFile','brandBannerFile','brandRemoveIcon','brandRemoveBanner','brandSave'].forEach(id=>$(id).disabled=value);
+    const busy=value=>['brandIconFile','brandRemoveIcon','brandSave'].forEach(id=>$(id).disabled=value);
     function cleanup(){previews.forEach(url=>URL.revokeObjectURL(url));previews=[];}
     function preview(){
       cleanup();
-      for(const [field,node,existing,remove] of [['brandIconFile','brandIconPreview',brand?.icon512,'brandRemoveIcon'],['brandBannerFile','brandBannerPreview',brand?.banner,'brandRemoveBanner']]){
+      for(const [field,node,existing,remove] of [['brandIconFile','brandIconPreview',brand?.icon512,'brandRemoveIcon']]){
         const file=$(field).files?.[0];const url=file?URL.createObjectURL(file):existing;
         if(file)previews.push(url);image(node,$(remove).checked?null:url,'Prévia da marca');
       }
     }
-    function reset(){generation++;scope='';brand=null;cleanup();$('brandForm').reset();busy(false);apply(null);$('brandStatus').textContent='';image('brandIconPreview',null,'');image('brandBannerPreview',null,'');}
+    function reset(){generation++;scope='';brand=null;cleanup();$('brandForm').reset();busy(false);apply(null);$('brandStatus').textContent='';image('brandIconPreview',null,'');}
     async function load(){
       const version=++generation;scope=identity();const expected=scope;
       busy(true);
@@ -56,18 +56,17 @@
       }catch(error){if(version===generation&&expected===identity())$('brandStatus').textContent='Não foi possível carregar a marca. '+error.message;}
       finally{if(version===generation)busy(false);}
     }
-    ['brandIconFile','brandBannerFile','brandRemoveIcon','brandRemoveBanner'].forEach(id=>$(id).addEventListener('change',()=>{
-      if(id==='brandIconFile')$('brandRemoveIcon').checked=false;if(id==='brandBannerFile')$('brandRemoveBanner').checked=false;preview();
+    ['brandIconFile','brandRemoveIcon'].forEach(id=>$(id).addEventListener('change',()=>{
+      if(id==='brandIconFile')$('brandRemoveIcon').checked=false;preview();
     }));
     $('brandForm').addEventListener('submit',async event=>{
       event.preventDefault();const version=generation,expected=identity();
       if(expected!==scope)return;
       busy(true);$('brandStatus').textContent='Preparando e enviando a marca…';
       try{
-        const form=new FormData();const icon=$('brandIconFile').files?.[0],banner=$('brandBannerFile').files?.[0];
+        const form=new FormData();const icon=$('brandIconFile').files?.[0];
         if(icon&&!$('brandRemoveIcon').checked){form.append('icon512',await prepare(icon,{icon:true,size:512}),'icon-512.png');form.append('icon192',await prepare(icon,{icon:true,size:192}),'icon-192.png');}
-        if(banner&&!$('brandRemoveBanner').checked)form.append('banner',await prepare(banner),'banner.png');
-        form.append('remover_icone',String($('brandRemoveIcon').checked));form.append('remover_banner',String($('brandRemoveBanner').checked));
+        form.append('remover_icone',String($('brandRemoveIcon').checked));
         if(version!==generation || expected!==identity())return;
         const value=await api('/api/identidade-visual',{method:'POST',body:form});
         if(version!==generation || expected!==identity())return;
